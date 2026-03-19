@@ -40,11 +40,11 @@ jobs:
             archive: brioche-merge-manager-macos-aarch64.tar.gz
             use_cross: false
 
-          - target: x86_64-pc-windows-gnu
-            os: ubuntu-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
             artifact: brioche-merge-manager.exe
             archive: brioche-merge-manager-windows-x86_64.zip
-            use_cross: true
+            use_cross: false
 
     steps:
       - uses: actions/checkout@v6
@@ -74,9 +74,11 @@ jobs:
 
       - name: Package (zip)
         if: endsWith(matrix.archive, '.zip')
+        shell: pwsh
         run: |
-          cd target/${{ matrix.target }}/release
-          zip "../../../${{ matrix.archive }}" ${{ matrix.artifact }}
+          Compress-Archive `
+            -Path "target\${{ matrix.target }}\release\${{ matrix.artifact }}" `
+            -DestinationPath "${{ matrix.archive }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
