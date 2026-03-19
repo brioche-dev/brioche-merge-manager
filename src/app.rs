@@ -35,7 +35,7 @@ impl Filter {
     pub fn label(&self) -> &str {
         match self {
             Self::Active => "Active",
-            Self::Ready  => "Ready",
+            Self::Ready => "Ready",
             Self::Failed => "Failed",
             Self::Queued => "Queued",
         }
@@ -43,8 +43,10 @@ impl Filter {
 
     pub fn matches(&self, pr: &PullRequest) -> bool {
         match self {
-            Self::Active => pr.status == PrStatus::ReadyToMerge || pr.status == PrStatus::FailedMerge,
-            Self::Ready  => pr.status == PrStatus::ReadyToMerge,
+            Self::Active => {
+                pr.status == PrStatus::ReadyToMerge || pr.status == PrStatus::FailedMerge
+            }
+            Self::Ready => pr.status == PrStatus::ReadyToMerge,
             Self::Failed => pr.status == PrStatus::FailedMerge,
             Self::Queued => pr.status == PrStatus::InQueue,
         }
@@ -53,7 +55,7 @@ impl Filter {
     pub fn next(&self) -> Self {
         match self {
             Self::Active => Self::Ready,
-            Self::Ready  => Self::Failed,
+            Self::Ready => Self::Failed,
             Self::Failed => Self::Queued,
             Self::Queued => Self::Active,
         }
@@ -62,7 +64,7 @@ impl Filter {
     pub fn prev(&self) -> Self {
         match self {
             Self::Active => Self::Queued,
-            Self::Ready  => Self::Active,
+            Self::Ready => Self::Active,
             Self::Failed => Self::Ready,
             Self::Queued => Self::Failed,
         }
@@ -146,7 +148,10 @@ impl App {
 
     /// PRs visible under the current filter.
     pub fn visible_prs(&self) -> Vec<&PullRequest> {
-        self.prs.iter().filter(|pr| self.active_filter.matches(pr)).collect()
+        self.prs
+            .iter()
+            .filter(|pr| self.active_filter.matches(pr))
+            .collect()
     }
 
     /// Count of PRs matching a given filter (for tab labels).
@@ -178,18 +183,18 @@ impl App {
                     return Some(Action::Quit);
                 }
                 match code {
-                    KeyCode::Up | KeyCode::Char('k')    => Some(Action::NavigateUp),
-                    KeyCode::Down | KeyCode::Char('j')  => Some(Action::NavigateDown),
-                    KeyCode::PageUp                      => Some(Action::NavigatePageUp),
-                    KeyCode::PageDown                    => Some(Action::NavigatePageDown),
-                    KeyCode::Home                        => Some(Action::NavigateHome),
-                    KeyCode::End                         => Some(Action::NavigateEnd),
-                    KeyCode::Tab                         => Some(Action::CycleFilterNext),
-                    KeyCode::BackTab                     => Some(Action::CycleFilterPrev),
-                    KeyCode::Char('q')                   => Some(Action::QueueSelected),
-                    KeyCode::Char('r')                   => Some(Action::RetrySelected),
-                    KeyCode::Char('R')                   => Some(Action::Refresh),
-                    KeyCode::Char('o')                   => Some(Action::OpenInBrowser),
+                    KeyCode::Up | KeyCode::Char('k') => Some(Action::NavigateUp),
+                    KeyCode::Down | KeyCode::Char('j') => Some(Action::NavigateDown),
+                    KeyCode::PageUp => Some(Action::NavigatePageUp),
+                    KeyCode::PageDown => Some(Action::NavigatePageDown),
+                    KeyCode::Home => Some(Action::NavigateHome),
+                    KeyCode::End => Some(Action::NavigateEnd),
+                    KeyCode::Tab => Some(Action::CycleFilterNext),
+                    KeyCode::BackTab => Some(Action::CycleFilterPrev),
+                    KeyCode::Char('q') => Some(Action::QueueSelected),
+                    KeyCode::Char('r') => Some(Action::RetrySelected),
+                    KeyCode::Char('R') => Some(Action::Refresh),
+                    KeyCode::Char('o') => Some(Action::OpenInBrowser),
                     _ => None,
                 }
             }
@@ -215,7 +220,8 @@ impl App {
                 self.load_progress = None;
                 let github = Arc::clone(&self.github);
                 let tx = action_tx.clone();
-                let (prog_tx, mut prog_rx) = tokio::sync::mpsc::unbounded_channel::<(usize, usize)>();
+                let (prog_tx, mut prog_rx) =
+                    tokio::sync::mpsc::unbounded_channel::<(usize, usize)>();
                 // Forward progress events to the action channel
                 let fwd_tx = tx.clone();
                 tokio::spawn(async move {
@@ -225,8 +231,12 @@ impl App {
                 });
                 tokio::spawn(async move {
                     match github.fetch_managed_prs(prog_tx).await {
-                        Ok(prs) => { let _ = tx.send(Action::DataLoaded(prs)); }
-                        Err(e)  => { let _ = tx.send(Action::LoadError(e.to_string())); }
+                        Ok(prs) => {
+                            let _ = tx.send(Action::DataLoaded(prs));
+                        }
+                        Err(e) => {
+                            let _ = tx.send(Action::LoadError(e.to_string()));
+                        }
                     }
                 });
             }
@@ -317,8 +327,11 @@ impl App {
                     if pr.status == PrStatus::FailedMerge {
                         let github = Arc::clone(&self.github);
                         let node_id = pr.node_id.clone();
-                        let queue_entry_id =
-                            pr.merge_queue.as_ref().map(|e| e.id.clone()).unwrap_or_default();
+                        let queue_entry_id = pr
+                            .merge_queue
+                            .as_ref()
+                            .map(|e| e.id.clone())
+                            .unwrap_or_default();
                         let pr_number = pr.number;
                         let tx = action_tx.clone();
                         tokio::spawn(async move {

@@ -15,10 +15,10 @@ pub fn render(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),   // header
-            Constraint::Fill(2),     // pr list
-            Constraint::Fill(3),     // pr detail
-            Constraint::Length(3),   // legend
+            Constraint::Length(1), // header
+            Constraint::Fill(2),   // pr list
+            Constraint::Fill(3),   // pr detail
+            Constraint::Length(3), // legend
         ])
         .split(f.area());
 
@@ -29,7 +29,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
 }
 
 fn render_header(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
-    let debug_badge = if tracing::enabled!(tracing::Level::DEBUG) { " [DBG]" } else { "" };
+    let debug_badge = if tracing::enabled!(tracing::Level::DEBUG) {
+        " [DBG]"
+    } else {
+        ""
+    };
     let pr_count = if app.prs.is_empty() {
         String::new()
     } else {
@@ -82,7 +86,10 @@ fn render_legend(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         desc(" Quit"),
     ]);
 
-    f.render_widget(Paragraph::new(vec![status_line, nav_line, action_line]), area);
+    f.render_widget(
+        Paragraph::new(vec![status_line, nav_line, action_line]),
+        area,
+    );
 }
 
 fn key(k: &str) -> Span<'_> {

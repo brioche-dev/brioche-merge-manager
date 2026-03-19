@@ -4,8 +4,7 @@ use tokio::task::JoinSet;
 use tracing::{debug, trace};
 
 use super::models::{
-    CheckRollupState, MergeQueueEntry, MergeQueueState, MergeableState, PullRequest,
-    ReviewDecision,
+    CheckRollupState, MergeQueueEntry, MergeQueueState, MergeableState, PullRequest, ReviewDecision,
 };
 
 const GRAPHQL_URL: &str = "https://api.github.com/graphql";
@@ -44,7 +43,9 @@ async fn graphql_post(
             Ok(r) => r,
             Err(e) => {
                 if attempt >= MAX_ATTEMPTS {
-                    return Err(anyhow!("GitHub GraphQL network error after {attempt} attempts: {e}"));
+                    return Err(anyhow!(
+                        "GitHub GraphQL network error after {attempt} attempts: {e}"
+                    ));
                 }
                 let delay = std::time::Duration::from_secs(1u64 << (attempt - 1));
                 debug!(attempt, delay_s = delay.as_secs(), %e, "graphql_post: network error, retrying");
@@ -56,7 +57,12 @@ async fn graphql_post(
         let status = resp.status();
         let text = resp.text().await?;
 
-        debug!(attempt, http = status.as_u16(), body_len = text.len(), "graphql_post: response");
+        debug!(
+            attempt,
+            http = status.as_u16(),
+            body_len = text.len(),
+            "graphql_post: response"
+        );
         if tracing::enabled!(tracing::Level::TRACE) {
             let snippet: String = text.chars().take(2000).collect();
             trace!(body = %snippet, "graphql_post: response body");
@@ -71,7 +77,12 @@ async fn graphql_post(
                 ));
             }
             let delay = std::time::Duration::from_secs(1u64 << (attempt - 1));
-            debug!(attempt, http = status.as_u16(), delay_s = delay.as_secs(), "graphql_post: server error, retrying");
+            debug!(
+                attempt,
+                http = status.as_u16(),
+                delay_s = delay.as_secs(),
+                "graphql_post: server error, retrying"
+            );
             tokio::time::sleep(delay).await;
             continue;
         }
@@ -125,10 +136,12 @@ pub async fn fetch_all_prs_bulk(
     let client = reqwest::Client::new();
 
     // Phase 1: collect cursors
-    let (start_cursors, total_count) =
-        collect_page_cursors(&client, token, owner, repo).await?;
+    let (start_cursors, total_count) = collect_page_cursors(&client, token, owner, repo).await?;
 
-    debug!(pages = start_cursors.len(), total_count, "fetch_all_prs_bulk: fetching pages in parallel");
+    debug!(
+        pages = start_cursors.len(),
+        total_count, "fetch_all_prs_bulk: fetching pages in parallel"
+    );
     let _ = progress.send((0, total_count));
 
     if start_cursors.is_empty() {
@@ -204,7 +217,9 @@ async fn collect_page_cursors(
             total_count = n as usize;
         }
 
-        let has_next = pr_page["pageInfo"]["hasNextPage"].as_bool().unwrap_or(false);
+        let has_next = pr_page["pageInfo"]["hasNextPage"]
+            .as_bool()
+            .unwrap_or(false);
         if !has_next {
             break;
         }
@@ -216,7 +231,10 @@ async fn collect_page_cursors(
         start_cursors.push(end_cursor);
     }
 
-    debug!(pages = start_cursors.len(), total_count, "collect_page_cursors: done");
+    debug!(
+        pages = start_cursors.len(),
+        total_count, "collect_page_cursors: done"
+    );
     Ok((start_cursors, total_count))
 }
 
@@ -264,7 +282,11 @@ async fn fetch_pr_page(
 
     let mut prs = Vec::new();
     if let Some(arr) = nodes.as_array() {
-        debug!(page = page_idx, count = arr.len(), "fetch_pr_page: received nodes");
+        debug!(
+            page = page_idx,
+            count = arr.len(),
+            "fetch_pr_page: received nodes"
+        );
         for node in arr {
             let pr = parse_pr_node(node);
             trace!(
@@ -335,12 +357,12 @@ fn parse_pr_node(node: &serde_json::Value) -> PullRequest {
 
 fn merge_state_status_to_state(s: &str) -> MergeableState {
     match s {
-        "CLEAN"    => MergeableState::Clean,
-        "DIRTY"    => MergeableState::Dirty,
-        "BLOCKED"  => MergeableState::Blocked,
-        "BEHIND"   => MergeableState::Behind,
+        "CLEAN" => MergeableState::Clean,
+        "DIRTY" => MergeableState::Dirty,
+        "BLOCKED" => MergeableState::Blocked,
+        "BEHIND" => MergeableState::Behind,
         "UNSTABLE" => MergeableState::Unstable,
-        _          => MergeableState::Unknown,
+        _ => MergeableState::Unknown,
     }
 }
 
@@ -354,7 +376,11 @@ fn parse_merge_queue_entry(val: &serde_json::Value) -> Option<MergeQueueEntry> {
     }
     let state = MergeQueueState::from(val["state"].as_str().unwrap_or("QUEUED"));
     let position = val["position"].as_u64().unwrap_or(0) as u32;
-    Some(MergeQueueEntry { id, state, position })
+    Some(MergeQueueEntry {
+        id,
+        state,
+        position,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -382,7 +408,11 @@ pub async fn enqueue_pull_request(token: &str, pull_request_id: &str) -> Result<
     let state = MergeQueueState::from(entry_val["state"].as_str().unwrap_or("QUEUED"));
     let position = entry_val["position"].as_u64().unwrap_or(0) as u32;
 
-    Ok(MergeQueueEntry { id, state, position })
+    Ok(MergeQueueEntry {
+        id,
+        state,
+        position,
+    })
 }
 
 pub async fn dequeue_pull_request(token: &str, entry_id: &str) -> Result<()> {

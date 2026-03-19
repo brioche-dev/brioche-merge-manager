@@ -12,9 +12,7 @@ pub fn spawn_event_task(tx: UnboundedSender<Event>) {
         loop {
             // Poll for crossterm events with a 250ms timeout for tick
             let result = tokio::task::spawn_blocking(|| {
-                if event::poll(std::time::Duration::from_millis(250))
-                    .unwrap_or(false)
-                {
+                if event::poll(std::time::Duration::from_millis(250)).unwrap_or(false) {
                     event::read().ok()
                 } else {
                     None

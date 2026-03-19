@@ -27,9 +27,11 @@ impl GitHubClient {
         progress: tokio::sync::mpsc::UnboundedSender<(usize, usize)>,
     ) -> Result<Vec<PullRequest>> {
         debug!("fetch_managed_prs: starting");
-        let raw_prs =
-            fetch_all_prs_bulk(&self.token, &self.owner, &self.repo, &progress).await?;
-        debug!(count = raw_prs.len(), "fetch_managed_prs: bulk fetch returned PRs");
+        let raw_prs = fetch_all_prs_bulk(&self.token, &self.owner, &self.repo, &progress).await?;
+        debug!(
+            count = raw_prs.len(),
+            "fetch_managed_prs: bulk fetch returned PRs"
+        );
         let prs = build_pull_requests(raw_prs);
         debug!(count = prs.len(), "fetch_managed_prs: done");
         Ok(prs)

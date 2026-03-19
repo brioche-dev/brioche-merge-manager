@@ -1,5 +1,5 @@
+use super::models::{PrStatus, PullRequest};
 use tracing::debug;
-use super::models::{PullRequest, PrStatus};
 
 /// Sort all PRs: FailedMerge first, ReadyToMerge second, InQueue last,
 /// descending by number within each group.
@@ -11,12 +11,20 @@ pub fn build_pull_requests(mut prs: Vec<PullRequest>) -> Vec<PullRequest> {
             PrStatus::ReadyToMerge => 1,
             PrStatus::InQueue => 2,
         };
-        order(&a.status).cmp(&order(&b.status)).then(b.number.cmp(&a.number))
+        order(&a.status)
+            .cmp(&order(&b.status))
+            .then(b.number.cmp(&a.number))
     });
     debug!(
         total = prs.len(),
-        failed = prs.iter().filter(|p| p.status == PrStatus::FailedMerge).count(),
-        ready  = prs.iter().filter(|p| p.status == PrStatus::ReadyToMerge).count(),
+        failed = prs
+            .iter()
+            .filter(|p| p.status == PrStatus::FailedMerge)
+            .count(),
+        ready = prs
+            .iter()
+            .filter(|p| p.status == PrStatus::ReadyToMerge)
+            .count(),
         queued = prs.iter().filter(|p| p.status == PrStatus::InQueue).count(),
         "build_pull_requests: sorted",
     );

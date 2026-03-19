@@ -43,11 +43,15 @@ fn init_tracing() {
         return;
     };
 
-    match std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+    match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
         Ok(file) => {
             use tracing_subscriber::{fmt, EnvFilter};
-            let filter = EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("debug"));
+            let filter =
+                EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug"));
             fmt()
                 .with_writer(std::sync::Mutex::new(file))
                 .with_ansi(false)

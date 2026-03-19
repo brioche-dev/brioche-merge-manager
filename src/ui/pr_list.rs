@@ -34,7 +34,11 @@ pub fn render_pr_list(f: &mut Frame, app: &mut App, area: Rect) {
                 height: 1,
             };
             let (loaded, total) = app.load_progress.unwrap_or((0, 0));
-            let ratio = if total > 0 { (loaded as f64 / total as f64).min(1.0) } else { 0.0 };
+            let ratio = if total > 0 {
+                (loaded as f64 / total as f64).min(1.0)
+            } else {
+                0.0
+            };
             let label = if total > 0 {
                 format!("  Loading… {loaded} / {total} PRs")
             } else {
@@ -107,13 +111,13 @@ pub fn render_pr_list(f: &mut Frame, app: &mut App, area: Rect) {
         .map(|pr| {
             let (dot_color, status_hint) = match pr.status {
                 PrStatus::ReadyToMerge => (Color::Green, "ready "),
-                PrStatus::FailedMerge  => (Color::Red,   "failed"),
-                PrStatus::InQueue      => (Color::Yellow, "queue "),
+                PrStatus::FailedMerge => (Color::Red, "failed"),
+                PrStatus::InQueue => (Color::Yellow, "queue "),
             };
 
             let (rollup_sym, rollup_color, rollup_dim) = match &pr.check_rollup {
                 Some(r) => (r.symbol().to_owned(), r.color(), false),
-                None    => ("—".to_owned(), Color::Reset, true),
+                None => ("—".to_owned(), Color::Reset, true),
             };
 
             let draft_marker = if pr.is_draft {

@@ -23,11 +23,7 @@ pub fn render_pr_detail(f: &mut Frame, app: &App, area: Rect) {
             .border_type(BorderType::Rounded)
             .border_style(Color::DarkGray);
         f.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::raw("  "),
-                "No PR selected".dim(),
-            ]))
-            .block(block),
+            Paragraph::new(Line::from(vec![Span::raw("  "), "No PR selected".dim()])).block(block),
             area,
         );
         return;
@@ -35,8 +31,8 @@ pub fn render_pr_detail(f: &mut Frame, app: &App, area: Rect) {
 
     let (status_text, status_color, status_dot) = match pr.status {
         PrStatus::ReadyToMerge => ("Ready to merge", Color::Green, "●"),
-        PrStatus::FailedMerge  => ("Failed to merge", Color::Red, "●"),
-        PrStatus::InQueue      => ("In merge queue", Color::Yellow, "●"),
+        PrStatus::FailedMerge => ("Failed to merge", Color::Red, "●"),
+        PrStatus::InQueue => ("In merge queue", Color::Yellow, "●"),
     };
 
     let draft_badge = if pr.is_draft {
@@ -59,7 +55,7 @@ pub fn render_pr_detail(f: &mut Frame, app: &App, area: Rect) {
 
     // Labels use DIM so they recede without forcing a specific color
     let label_style = Style::new().dim();
-    let sep_style   = Style::new().dark_gray();
+    let sep_style = Style::new().dark_gray();
 
     let mut lines = vec![
         Line::raw(""),
@@ -114,16 +110,16 @@ pub fn render_pr_detail(f: &mut Frame, app: &App, area: Rect) {
     // Merge queue info
     if let Some(entry) = &pr.merge_queue {
         let state_label = match entry.state {
-            MergeQueueState::Queued      => "queued",
-            MergeQueueState::Awaiting    => "awaiting checks",
-            MergeQueueState::Mergeable   => "mergeable",
+            MergeQueueState::Queued => "queued",
+            MergeQueueState::Awaiting => "awaiting checks",
+            MergeQueueState::Mergeable => "mergeable",
             MergeQueueState::Unmergeable => "unmergeable",
-            MergeQueueState::Locked      => "locked",
+            MergeQueueState::Locked => "locked",
         };
         let state_color = match entry.state {
-            MergeQueueState::Mergeable   => Color::Green,
+            MergeQueueState::Mergeable => Color::Green,
             MergeQueueState::Unmergeable => Color::Red,
-            _                            => Color::Yellow,
+            _ => Color::Yellow,
         };
         lines.push(Line::from(vec![
             Span::styled("  Queue   ", label_style),
@@ -159,10 +155,26 @@ pub fn render_pr_detail(f: &mut Frame, app: &App, area: Rect) {
     let queue_active = pr.status == PrStatus::ReadyToMerge;
     let retry_active = pr.status == PrStatus::FailedMerge;
 
-    let key_q: Span = if queue_active { "q".cyan().bold() } else { "q".dim() };
-    let desc_q: Span = if queue_active { Span::raw("  Queue PR") } else { "  Queue PR".dim() };
-    let key_r: Span = if retry_active { "r".cyan().bold() } else { "r".dim() };
-    let desc_r: Span = if retry_active { Span::raw("  Retry PR") } else { "  Retry PR".dim() };
+    let key_q: Span = if queue_active {
+        "q".cyan().bold()
+    } else {
+        "q".dim()
+    };
+    let desc_q: Span = if queue_active {
+        Span::raw("  Queue PR")
+    } else {
+        "  Queue PR".dim()
+    };
+    let key_r: Span = if retry_active {
+        "r".cyan().bold()
+    } else {
+        "r".dim()
+    };
+    let desc_r: Span = if retry_active {
+        Span::raw("  Retry PR")
+    } else {
+        "  Retry PR".dim()
+    };
 
     lines.push(Line::from(vec![
         Span::raw("  "),
