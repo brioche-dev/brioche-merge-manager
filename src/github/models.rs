@@ -137,6 +137,63 @@ impl ReviewDecision {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum FileStatus {
+    Added,
+    Modified,
+    Deleted,
+    Renamed,
+    Copied,
+    Unknown,
+}
+
+impl From<&str> for FileStatus {
+    fn from(s: &str) -> Self {
+        match s {
+            "added" => Self::Added,
+            "modified" => Self::Modified,
+            "deleted" => Self::Deleted,
+            "renamed" => Self::Renamed,
+            "copied" => Self::Copied,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+impl FileStatus {
+    pub fn symbol(&self) -> &str {
+        match self {
+            Self::Added => "+",
+            Self::Modified => "~",
+            Self::Deleted => "-",
+            Self::Renamed => "→",
+            Self::Copied => "⎘",
+            Self::Unknown => "?",
+        }
+    }
+
+    pub fn color(&self) -> ratatui::style::Color {
+        use ratatui::style::Color;
+        match self {
+            Self::Added => Color::Green,
+            Self::Modified => Color::Yellow,
+            Self::Deleted => Color::Red,
+            Self::Renamed | Self::Copied => Color::Cyan,
+            Self::Unknown => Color::Reset,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FileDiff {
+    pub filename: String,
+    pub status: FileStatus,
+    pub additions: u32,
+    pub deletions: u32,
+    /// Raw unified diff patch, absent for binary files.
+    pub patch: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum PrStatus {
     ReadyToMerge,

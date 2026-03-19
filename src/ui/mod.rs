@@ -1,4 +1,5 @@
 mod pr_detail;
+mod pr_diff;
 mod pr_list;
 
 use ratatui::{
@@ -17,14 +18,27 @@ pub fn render(f: &mut Frame, app: &mut App) {
         .constraints([
             Constraint::Length(1), // header
             Constraint::Fill(2),   // pr list
-            Constraint::Fill(3),   // pr detail
+            Constraint::Fill(3),   // pr detail / diff
             Constraint::Length(3), // legend
         ])
         .split(f.area());
 
     render_header(f, app, chunks[0]);
     pr_list::render_pr_list(f, app, chunks[1]);
-    pr_detail::render_pr_detail(f, app, chunks[2]);
+
+    if app.show_diff {
+        let detail_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Fill(3), Constraint::Fill(2)])
+            .split(chunks[2]);
+        // Keep diff_height in sync so PageUp/Down scroll the right amount.
+        app.diff_height = detail_chunks[1].height.saturating_sub(2) as usize;
+        pr_detail::render_pr_detail(f, app, detail_chunks[0]);
+        pr_diff::render_pr_diff(f, app, detail_chunks[1]);
+    } else {
+        pr_detail::render_pr_detail(f, app, chunks[2]);
+    }
+
     render_legend(f, app, chunks[3]);
 }
 
@@ -60,31 +74,67 @@ fn render_legend(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         Line::raw("")
     };
 
-    let nav_line = Line::from(vec![
-        Span::raw(" "),
-        key("↑↓"),
-        sep(" / "),
-        key("jk"),
-        desc(" Navigate  "),
-        key("Tab"),
-        sep(" / "),
-        key("⇧Tab"),
-        desc(" Cycle filter  "),
-        key("R"),
-        desc(" Refresh"),
-    ]);
-
-    let action_line = Line::from(vec![
-        Span::raw(" "),
-        key("q"),
-        desc(" Queue PR  "),
-        key("r"),
-        desc(" Retry PR  "),
-        key("o"),
-        desc(" Open in browser  "),
-        key("Ctrl+C"),
-        desc(" Quit"),
-    ]);
+    let (nav_line, action_line) = if app.diff_focused {
+        (
+            Line::from(vec![
+                Span::raw(" "),
+                key("↑↓"),
+                sep(" / "),
+                key("jk"),
+                desc(" Scroll diff  "),
+                key("PgUp"),
+                sep("/"),
+                key("PgDn"),
+                desc(" Page  "),
+                key("Home"),
+                sep("/"),
+                key("End"),
+                desc(" Top/Bottom"),
+            ]),
+            Line::from(vec![
+                Span::raw(" "),
+                key("Esc"),
+                desc(" Unfocus diff  "),
+                key("d"),
+                desc(" Close diff  "),
+                key("o"),
+                desc(" Open in browser  "),
+                key("R"),
+                desc(" Refresh  "),
+                key("Ctrl+C"),
+                desc(" Quit"),
+            ]),
+        )
+    } else {
+        (
+            Line::from(vec![
+                Span::raw(" "),
+                key("↑↓"),
+                sep(" / "),
+                key("jk"),
+                desc(" Navigate  "),
+                key("Tab"),
+                sep(" / "),
+                key("⇧Tab"),
+                desc(" Cycle filter  "),
+                key("R"),
+                desc(" Refresh"),
+            ]),
+            Line::from(vec![
+                Span::raw(" "),
+                key("q"),
+                desc(" Queue PR  "),
+                key("r"),
+                desc(" Retry PR  "),
+                key("o"),
+                desc(" Open in browser  "),
+                key("d"),
+                desc(" Diff  "),
+                key("Ctrl+C"),
+                desc(" Quit"),
+            ]),
+        )
+    };
 
     f.render_widget(
         Paragraph::new(vec![status_line, nav_line, action_line]),

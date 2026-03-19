@@ -12,29 +12,27 @@ browser — all without leaving the terminal.
 ## Screenshot
 
 ```
-╭ 🍞 Brioche Merge Manager ╮  brioche-dev/brioche-packages  ·  312 PRs
+ 🍞 Brioche Merge Manager   brioche-dev/brioche-packages  ·  312 PRs
 ╭ Pull Requests ───────────────────────────────────────────────────────╮
-│  Active (12)   Ready (9)   Failed (3)   Queued (47)                  │
+│ ▶ Active (12)   Ready (9)   Failed (3)   Queued (47)                 │
 │                                                                       │
 │ ▶ ● #3712  ready  ✓  feat: add python package          @alice        │
 │   ● #3698  ready  ✓  chore: bump openssl                @bob         │
 │   ● #3685  failed ✗  fix: use correct cmake flags       @carol       │
 ╰───────────────────────────────────────────────────────────────────────╯
-╭ ● PR #3712 ───────────────────────────────────────────────────────────╮
-│                                                                       │
-│   Title   │  feat: add python package                                 │
-│   Author  │  @alice                                                   │
-│   Status  │  ●  Ready to merge                                        │
-│   Checks  │  ✓  success                                               │
-│   Review  │  ✓  approved                                              │
-│   URL     │  https://github.com/brioche-dev/brioche-packages/pull/… │
-│                                                                       │
-│  ──────────────────────────────────────────────────                   │
-│                                                                       │
-│   q  Queue PR     r  Retry PR     o  Open in browser                  │
-╰───────────────────────────────────────────────────────────────────────╯
+╭ ● PR #3712 ──────────────────────────╮╭ Diff  d to scroll ──────────╮
+│                                       ││                              │
+│   Title  │  feat: add python package  ││  3 files  +47  -12          │
+│   Author │  @alice                    ││  ──────────────────────      │
+│   Status │  ●  Ready to merge         ││                              │
+│   Checks │  ✓  success                ││  ~ src/packages/python.bri  │
+│   Review │  ✓  approved               ││  @@ -1,6 +1,8 @@            │
+│   URL    │  https://github.com/…      ││  -version = "3.11.0"        │
+│                                       ││  +version = "3.12.0"        │
+│  q  Queue PR    o  Open in browser    ││  +                          │
+╰───────────────────────────────────────╯╰──────────────────────────────╯
   ↑↓ / jk  Navigate    Tab / ⇧Tab  Cycle filter    R  Refresh
-  q  Queue PR    r  Retry PR    o  Open in browser    Ctrl+C  Quit
+  q  Queue PR    r  Retry PR    o  Open in browser    d  Diff    Ctrl+C  Quit
 ```
 
 ---
@@ -109,6 +107,8 @@ cargo run
 
 ### Keybindings
 
+**PR list navigation**
+
 | Key | Action |
 |---|---|
 | `↑` / `k` | Move selection up |
@@ -119,11 +119,30 @@ cargo run
 | `End` | Jump to last PR |
 | `Tab` | Cycle filter forward |
 | `Shift+Tab` | Cycle filter backward |
+
+**Actions**
+
+| Key | Action |
+|---|---|
 | `q` | Add selected PR to merge queue |
 | `r` | Retry selected PR (dequeue then re-queue) |
 | `o` | Open selected PR in browser |
+| `d` | Open diff panel (focuses it for scrolling) |
 | `R` | Refresh PR list |
 | `Ctrl+C` | Quit |
+
+**Diff panel** (press `d` to open and focus)
+
+| Key | Action |
+|---|---|
+| `↑` / `k` | Scroll diff up |
+| `↓` / `j` | Scroll diff down |
+| `Page Up` | Scroll diff up one page |
+| `Page Down` | Scroll diff down one page |
+| `Home` | Jump to top of diff |
+| `End` | Jump to bottom of diff |
+| `Esc` | Unfocus diff (restore PR list navigation) |
+| `d` | Close diff panel |
 
 ### Filters
 

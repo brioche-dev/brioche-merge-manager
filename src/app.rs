@@ -8,7 +8,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::config::Config;
 use crate::event::Event;
-use crate::github::models::{PrStatus, PullRequest};
+use crate::github::models::{FileDiff, PrStatus, PullRequest};
 use crate::github::GitHubClient;
 
 // ---------------------------------------------------------------------------
@@ -72,13 +72,19 @@ impl Filter {
 }
 
 // ---------------------------------------------------------------------------
-// LoadState / Action
+// LoadState / DiffState / Action
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
 pub enum LoadState {
     Idle,
     Loading,
+    Error(String),
+}
+
+#[derive(Debug, Clone)]
+pub enum DiffState {
+    Loaded(Vec<FileDiff>),
     Error(String),
 }
 
@@ -102,6 +108,12 @@ pub enum Action {
     NavigatePageDown,
     NavigateHome,
     NavigateEnd,
+    ToggleDiff,
+    UnfocusDiff,
+    DiffLoaded(u64, Vec<FileDiff>),
+    DiffError(u64, String),
+    DiffScrollUp(usize),
+    DiffScrollDown(usize),
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +136,16 @@ pub struct App {
     pub active_filter: Filter,
     pub status_msg: Option<(String, Instant)>,
     pub should_quit: bool,
+    /// Whether the diff panel is visible.
+    pub show_diff: bool,
+    /// Whether j/k/arrows scroll the diff instead of navigating the PR list.
+    pub diff_focused: bool,
+    /// Cached diff per PR number.
+    pub diff_cache: std::collections::HashMap<u64, DiffState>,
+    /// Scroll offset within the diff panel.
+    pub diff_scroll: usize,
+    /// Height of the visible diff area in rows (updated each render frame).
+    pub diff_height: usize,
 }
 
 impl App {
@@ -143,6 +165,11 @@ impl App {
             active_filter: Filter::Active,
             status_msg: None,
             should_quit: false,
+            show_diff: false,
+            diff_focused: false,
+            diff_cache: std::collections::HashMap::new(),
+            diff_scroll: 0,
+            diff_height: 10,
         }
     }
 
@@ -164,6 +191,24 @@ impl App {
         self.visible_prs().into_iter().nth(self.selected)
     }
 
+    fn fetch_diff_if_needed(&self, pr_number: u64, tx: &UnboundedSender<Action>) {
+        if self.diff_cache.contains_key(&pr_number) {
+            return;
+        }
+        let github = Arc::clone(&self.github);
+        let tx = tx.clone();
+        tokio::spawn(async move {
+            match github.fetch_diff(pr_number).await {
+                Ok(files) => {
+                    let _ = tx.send(Action::DiffLoaded(pr_number, files));
+                }
+                Err(e) => {
+                    let _ = tx.send(Action::DiffError(pr_number, e.to_string()));
+                }
+            }
+        });
+    }
+
     fn clamp_selection(&mut self) {
         let count = self.visible_prs().len();
         if count == 0 {
@@ -182,6 +227,22 @@ impl App {
                 if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('c') {
                     return Some(Action::Quit);
                 }
+                // When the diff panel has focus, navigation keys scroll the diff.
+                if self.diff_focused {
+                    return match code {
+                        KeyCode::Up | KeyCode::Char('k') => Some(Action::DiffScrollUp(1)),
+                        KeyCode::Down | KeyCode::Char('j') => Some(Action::DiffScrollDown(1)),
+                        KeyCode::PageUp => Some(Action::DiffScrollUp(self.diff_height.max(1))),
+                        KeyCode::PageDown => Some(Action::DiffScrollDown(self.diff_height.max(1))),
+                        KeyCode::Home => Some(Action::DiffScrollUp(usize::MAX)),
+                        KeyCode::End => Some(Action::DiffScrollDown(usize::MAX)),
+                        KeyCode::Esc => Some(Action::UnfocusDiff),
+                        KeyCode::Char('d') => Some(Action::ToggleDiff),
+                        KeyCode::Char('R') => Some(Action::Refresh),
+                        KeyCode::Char('o') => Some(Action::OpenInBrowser),
+                        _ => None,
+                    };
+                }
                 match code {
                     KeyCode::Up | KeyCode::Char('k') => Some(Action::NavigateUp),
                     KeyCode::Down | KeyCode::Char('j') => Some(Action::NavigateDown),
@@ -195,6 +256,7 @@ impl App {
                     KeyCode::Char('r') => Some(Action::RetrySelected),
                     KeyCode::Char('R') => Some(Action::Refresh),
                     KeyCode::Char('o') => Some(Action::OpenInBrowser),
+                    KeyCode::Char('d') => Some(Action::ToggleDiff),
                     _ => None,
                 }
             }
@@ -245,6 +307,12 @@ impl App {
                 if !self.visible_prs().is_empty() {
                     self.selected = self.selected.saturating_sub(1);
                     self.list_state.select(Some(self.selected));
+                    self.diff_scroll = 0;
+                }
+                if self.show_diff {
+                    if let Some(pr) = self.selected_pr() {
+                        self.fetch_diff_if_needed(pr.number, action_tx);
+                    }
                 }
             }
 
@@ -253,6 +321,12 @@ impl App {
                 if count > 0 {
                     self.selected = (self.selected + 1).min(count - 1);
                     self.list_state.select(Some(self.selected));
+                    self.diff_scroll = 0;
+                }
+                if self.show_diff {
+                    if let Some(pr) = self.selected_pr() {
+                        self.fetch_diff_if_needed(pr.number, action_tx);
+                    }
                 }
             }
 
@@ -260,6 +334,12 @@ impl App {
                 let page = self.list_height.max(1);
                 self.selected = self.selected.saturating_sub(page);
                 self.list_state.select(Some(self.selected));
+                self.diff_scroll = 0;
+                if self.show_diff {
+                    if let Some(pr) = self.selected_pr() {
+                        self.fetch_diff_if_needed(pr.number, action_tx);
+                    }
+                }
             }
 
             Action::NavigatePageDown => {
@@ -268,12 +348,24 @@ impl App {
                     let page = self.list_height.max(1);
                     self.selected = (self.selected + page).min(count - 1);
                     self.list_state.select(Some(self.selected));
+                    self.diff_scroll = 0;
+                }
+                if self.show_diff {
+                    if let Some(pr) = self.selected_pr() {
+                        self.fetch_diff_if_needed(pr.number, action_tx);
+                    }
                 }
             }
 
             Action::NavigateHome => {
                 self.selected = 0;
                 self.list_state.select(Some(0));
+                self.diff_scroll = 0;
+                if self.show_diff {
+                    if let Some(pr) = self.selected_pr() {
+                        self.fetch_diff_if_needed(pr.number, action_tx);
+                    }
+                }
             }
 
             Action::NavigateEnd => {
@@ -281,6 +373,12 @@ impl App {
                 if count > 0 {
                     self.selected = count - 1;
                     self.list_state.select(Some(self.selected));
+                    self.diff_scroll = 0;
+                }
+                if self.show_diff {
+                    if let Some(pr) = self.selected_pr() {
+                        self.fetch_diff_if_needed(pr.number, action_tx);
+                    }
                 }
             }
 
@@ -373,6 +471,42 @@ impl App {
                         }
                     });
                 }
+            }
+
+            Action::ToggleDiff => {
+                if self.show_diff {
+                    // Close the panel entirely (regardless of focus state).
+                    self.show_diff = false;
+                    self.diff_focused = false;
+                } else {
+                    // Open and immediately focus the diff panel.
+                    self.show_diff = true;
+                    self.diff_focused = true;
+                    self.diff_scroll = 0;
+                    if let Some(pr) = self.selected_pr() {
+                        self.fetch_diff_if_needed(pr.number, action_tx);
+                    }
+                }
+            }
+
+            Action::UnfocusDiff => {
+                self.diff_focused = false;
+            }
+
+            Action::DiffLoaded(pr_number, files) => {
+                self.diff_cache.insert(pr_number, DiffState::Loaded(files));
+            }
+
+            Action::DiffError(pr_number, msg) => {
+                self.diff_cache.insert(pr_number, DiffState::Error(msg));
+            }
+
+            Action::DiffScrollUp(amount) => {
+                self.diff_scroll = self.diff_scroll.saturating_sub(amount);
+            }
+
+            Action::DiffScrollDown(amount) => {
+                self.diff_scroll = self.diff_scroll.saturating_add(amount);
             }
 
             Action::Quit => {

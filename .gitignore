@@ -1,2 +1,7 @@
 /target
 /.claude
+.env
+*.env
+*.log
+*.tmp
+*.bak
