@@ -105,7 +105,7 @@ async fn graphql_post(
 
         if let Some(errors) = val.get("errors") {
             debug!(%errors, "graphql_post: GraphQL errors");
-            if val["data"].is_null() || !val.get("data").is_some_and(|d| !d.is_null()) {
+            if val.get("data").is_none_or(|d| d.is_null()) {
                 return Err(anyhow!("GitHub GraphQL errors: {errors}"));
             }
         }
