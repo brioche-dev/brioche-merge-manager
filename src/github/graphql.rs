@@ -107,10 +107,9 @@ async fn graphql_post(
         })?;
 
         if let Some(errors) = val.get("errors") {
+            let msg = format_graphql_errors(errors);
             debug!(%errors, "graphql_post: GraphQL errors");
-            if val.get("data").is_none_or(|d| d.is_null()) {
-                return Err(anyhow!("GitHub GraphQL errors: {errors}"));
-            }
+            return Err(anyhow!("GitHub GraphQL error: {msg}"));
         }
 
         return Ok(val);
@@ -420,6 +419,22 @@ fn parse_merge_queue_entry(val: &serde_json::Value) -> Option<MergeQueueEntry> {
 }
 
 // ---------------------------------------------------------------------------
+// Error formatting
+// ---------------------------------------------------------------------------
+
+/// Extract human-readable messages from a GraphQL `errors` array.
+/// Falls back to the raw JSON if the structure is unexpected.
+fn format_graphql_errors(errors: &serde_json::Value) -> String {
+    if let Some(arr) = errors.as_array() {
+        let messages: Vec<&str> = arr.iter().filter_map(|e| e["message"].as_str()).collect();
+        if !messages.is_empty() {
+            return messages.join("; ");
+        }
+    }
+    errors.to_string()
+}
+
+// ---------------------------------------------------------------------------
 // Mutations
 // ---------------------------------------------------------------------------
 
@@ -440,7 +455,13 @@ pub async fn enqueue_pull_request(token: &str, pull_request_id: &str) -> Result<
     let client = reqwest::Client::new();
     let response = graphql_post(&client, token, &body).await?;
     let entry_val = &response["data"]["enqueuePullRequest"]["mergeQueueEntry"];
-    let id = entry_val["id"].as_str().unwrap_or("").to_string();
+
+    let id = entry_val["id"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| anyhow!("enqueuePullRequest returned no mergeQueueEntry — the PR may already be queued or ineligible"))?
+        .to_string();
+
     let state = MergeQueueState::from(entry_val["state"].as_str().unwrap_or("QUEUED"));
     let position = entry_val["position"].as_u64().unwrap_or(0) as u32;
 

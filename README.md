@@ -30,10 +30,10 @@ browser — all without leaving the terminal.
 │   Review │  ✓  approved               ││  @@ -1,6 +1,8 @@            │
 │   URL    │  https://github.com/…      ││  -version = "3.11.0"        │
 │                                       ││  +version = "3.12.0"        │
-│  q  Queue PR    o  Open in browser    ││  +                          │
+│  r  Add to queue    o  Open in browser  ││  +                        │
 ╰───────────────────────────────────────╯╰──────────────────────────────╯
   ↑↓ / jk  Navigate    Tab / ⇧Tab  Cycle filter    R  Refresh
-  q  Queue PR    r  Retry PR    o  Open in browser    d  Diff    Ctrl+C  Quit
+  r  Add to queue    o  Open in browser    d  Diff    Ctrl+C  Quit
 ```
 
 ---
@@ -55,7 +55,7 @@ following repository permissions for the target repo:
 | **Merge queues** | Read and write |
 | **Pull requests** | Read and write |
 | **Metadata** | Read |
-| **Contents** | Read |
+| **Contents** | Read and write |
 | **Actions** | Read |
 
 Create one at **GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens**.
@@ -125,8 +125,7 @@ cargo run
 
 | Key | Action |
 |---|---|
-| `q` | Add selected PR to merge queue |
-| `r` | Re-queue selected PR (for removed PRs) |
+| `r` | Add selected PR to merge queue (works for ready and removed PRs) |
 | `o` | Open selected PR in browser |
 | `d` | Open diff panel (focuses it for scrolling) |
 | `R` | Refresh PR list |

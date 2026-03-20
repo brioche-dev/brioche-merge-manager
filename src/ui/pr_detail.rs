@@ -170,36 +170,21 @@ pub fn render_pr_detail(f: &mut Frame, app: &App, area: Rect) {
     ));
     lines.push(Line::raw(""));
 
-    // Action hints — dim inapplicable ones rather than forcing a dark color
-    let queue_active = pr.status == PrStatus::ReadyToMerge;
-    let retry_active = pr.status == PrStatus::FailedMerge;
-
-    let key_q: Span = if queue_active {
-        "q".cyan().bold()
-    } else {
-        "q".dim()
-    };
-    let desc_q: Span = if queue_active {
-        Span::raw("  Queue PR")
-    } else {
-        "  Queue PR".dim()
-    };
-    let key_r: Span = if retry_active {
+    // r is active for any PR not currently in the merge queue
+    let enqueue_active = pr.merge_queue.is_none();
+    let key_r: Span = if enqueue_active {
         "r".cyan().bold()
     } else {
         "r".dim()
     };
-    let desc_r: Span = if retry_active {
-        Span::raw("  Retry PR")
+    let desc_r: Span = if enqueue_active {
+        Span::raw("  Add to queue")
     } else {
-        "  Retry PR".dim()
+        "  Add to queue".dim()
     };
 
     lines.push(Line::from(vec![
         Span::raw("  "),
-        key_q,
-        desc_q,
-        Span::raw("     "),
         key_r,
         desc_r,
         Span::raw("     "),

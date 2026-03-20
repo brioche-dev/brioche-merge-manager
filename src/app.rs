@@ -8,7 +8,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::config::Config;
 use crate::event::Event;
-use crate::github::models::{FileDiff, PrStatus, PullRequest};
+use crate::github::models::{FileDiff, MergeQueueEntry, PrStatus, PullRequest};
 use crate::github::GitHubClient;
 
 // ---------------------------------------------------------------------------
@@ -94,8 +94,7 @@ pub enum Action {
     NavigateDown,
     CycleFilterNext,
     CycleFilterPrev,
-    QueueSelected,
-    RetrySelected,
+    EnqueueSelected,
     OpenInBrowser,
     Quit,
     DataLoaded(Vec<PullRequest>),
@@ -112,6 +111,7 @@ pub enum Action {
     DiffError(u64, String),
     DiffScrollUp(usize),
     DiffScrollDown(usize),
+    PrEnqueued(u64, MergeQueueEntry),
 }
 
 // ---------------------------------------------------------------------------
@@ -249,8 +249,7 @@ impl App {
                     KeyCode::End => Some(Action::NavigateEnd),
                     KeyCode::Tab => Some(Action::CycleFilterNext),
                     KeyCode::BackTab => Some(Action::CycleFilterPrev),
-                    KeyCode::Char('q') => Some(Action::QueueSelected),
-                    KeyCode::Char('r') => Some(Action::RetrySelected),
+                    KeyCode::Char('r') => Some(Action::EnqueueSelected),
                     KeyCode::Char('R') => Some(Action::Refresh),
                     KeyCode::Char('o') => Some(Action::OpenInBrowser),
                     KeyCode::Char('d') => Some(Action::ToggleDiff),
@@ -391,20 +390,17 @@ impl App {
                 self.clamp_selection();
             }
 
-            Action::QueueSelected => {
+            Action::EnqueueSelected => {
                 if let Some(pr) = self.selected_pr() {
-                    if pr.status == PrStatus::ReadyToMerge {
+                    if pr.merge_queue.is_none() {
                         let github = Arc::clone(&self.github);
                         let node_id = pr.node_id.clone();
                         let pr_number = pr.number;
                         let tx = action_tx.clone();
                         tokio::spawn(async move {
                             match github.enqueue_pr(&node_id).await {
-                                Ok(_) => {
-                                    let _ = tx.send(Action::StatusMessage(format!(
-                                        "PR #{pr_number} added to merge queue"
-                                    )));
-                                    let _ = tx.send(Action::Refresh);
+                                Ok(entry) => {
+                                    let _ = tx.send(Action::PrEnqueued(pr_number, entry));
                                 }
                                 Err(e) => {
                                     let _ = tx.send(Action::StatusMessage(format!(
@@ -417,30 +413,30 @@ impl App {
                 }
             }
 
-            Action::RetrySelected => {
-                if let Some(pr) = self.selected_pr() {
-                    if pr.status == PrStatus::FailedMerge {
-                        let github = Arc::clone(&self.github);
-                        let node_id = pr.node_id.clone();
-                        let pr_number = pr.number;
-                        let tx = action_tx.clone();
-                        tokio::spawn(async move {
-                            match github.enqueue_pr(&node_id).await {
-                                Ok(_) => {
-                                    let _ = tx.send(Action::StatusMessage(format!(
-                                        "PR #{pr_number} added to merge queue"
-                                    )));
-                                    let _ = tx.send(Action::Refresh);
-                                }
-                                Err(e) => {
-                                    let _ = tx.send(Action::StatusMessage(format!(
-                                        "Error retrying PR #{pr_number}: {e}"
-                                    )));
-                                }
-                            }
-                        });
-                    }
+            Action::PrEnqueued(pr_number, entry) => {
+                // Update the PR in-place — no full reload needed.
+                if let Some(pr) = self.prs.iter_mut().find(|p| p.number == pr_number) {
+                    pr.merge_queue = Some(entry);
+                    pr.status = PullRequest::compute_status(
+                        &pr.mergeable_state,
+                        &pr.merge_queue,
+                        pr.is_draft,
+                        &pr.last_queue_removal,
+                    );
                 }
+                // Switch to Queued filter and select the PR.
+                self.active_filter = Filter::Queued;
+                let new_idx = self
+                    .visible_prs()
+                    .iter()
+                    .position(|p| p.number == pr_number)
+                    .unwrap_or(0);
+                self.selected = new_idx;
+                self.list_state.select(Some(new_idx));
+                self.status_msg = Some((
+                    format!("PR #{pr_number} added to merge queue"),
+                    Instant::now(),
+                ));
             }
 
             Action::OpenInBrowser => {

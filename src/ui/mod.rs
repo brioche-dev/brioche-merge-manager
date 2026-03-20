@@ -122,10 +122,8 @@ fn render_legend(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
             ]),
             Line::from(vec![
                 Span::raw(" "),
-                key("q"),
-                desc(" Queue PR  "),
                 key("r"),
-                desc(" Retry PR  "),
+                desc(" Add to queue  "),
                 key("o"),
                 desc(" Open in browser  "),
                 key("d"),
