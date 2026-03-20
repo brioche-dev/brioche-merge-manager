@@ -112,6 +112,7 @@ pub enum Action {
     DiffScrollUp(usize),
     DiffScrollDown(usize),
     PrEnqueued(u64, MergeQueueEntry),
+    EnqueueFailed,
 }
 
 // ---------------------------------------------------------------------------
@@ -143,6 +144,14 @@ pub struct App {
     pub diff_scroll: usize,
     /// Height of the visible diff area in rows (updated each render frame).
     pub diff_height: usize,
+    /// PR number currently being enqueued, if any.
+    pub enqueue_pending: Option<u64>,
+    /// Set when the enqueue response has arrived but the spinner hasn't been
+    /// cleared yet — Tick clears it so the spinner is visible for at least
+    /// one full tick cycle.
+    pub enqueue_done: bool,
+    /// Incremented on every Tick — used to drive spinner frames.
+    pub tick_count: usize,
 }
 
 impl App {
@@ -167,6 +176,9 @@ impl App {
             diff_cache: std::collections::HashMap::new(),
             diff_scroll: 0,
             diff_height: 10,
+            enqueue_pending: None,
+            enqueue_done: false,
+            tick_count: 0,
         }
     }
 
@@ -266,6 +278,11 @@ impl App {
     ) -> Result<()> {
         match action {
             Action::Tick => {
+                self.tick_count = self.tick_count.wrapping_add(1);
+                if self.enqueue_done {
+                    self.enqueue_pending = None;
+                    self.enqueue_done = false;
+                }
                 if let Some((_, ts)) = &self.status_msg {
                     if ts.elapsed().as_secs() >= 3 {
                         self.status_msg = None;
@@ -392,11 +409,12 @@ impl App {
 
             Action::EnqueueSelected => {
                 if let Some(pr) = self.selected_pr() {
-                    if pr.merge_queue.is_none() {
+                    if pr.merge_queue.is_none() && self.enqueue_pending.is_none() {
                         let github = Arc::clone(&self.github);
                         let node_id = pr.node_id.clone();
                         let pr_number = pr.number;
                         let tx = action_tx.clone();
+                        self.enqueue_pending = Some(pr_number);
                         tokio::spawn(async move {
                             match github.enqueue_pr(&node_id).await {
                                 Ok(entry) => {
@@ -406,6 +424,7 @@ impl App {
                                     let _ = tx.send(Action::StatusMessage(format!(
                                         "Error queuing PR #{pr_number}: {e}"
                                     )));
+                                    let _ = tx.send(Action::EnqueueFailed);
                                 }
                             }
                         });
@@ -413,7 +432,12 @@ impl App {
                 }
             }
 
+            Action::EnqueueFailed => {
+                self.enqueue_done = true;
+            }
+
             Action::PrEnqueued(pr_number, entry) => {
+                self.enqueue_done = true;
                 // Update the PR in-place — no full reload needed.
                 if let Some(pr) = self.prs.iter_mut().find(|p| p.number == pr_number) {
                     pr.merge_queue = Some(entry);

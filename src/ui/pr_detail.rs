@@ -170,27 +170,37 @@ pub fn render_pr_detail(f: &mut Frame, app: &App, area: Rect) {
     ));
     lines.push(Line::raw(""));
 
-    // r is active for any PR not currently in the merge queue
-    let enqueue_active = pr.merge_queue.is_none();
-    let key_r: Span = if enqueue_active {
-        "r".cyan().bold()
+    // Spinner while enqueue is in-flight for this PR
+    if app.enqueue_pending == Some(pr.number) {
+        const SPINNER: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+        let frame = SPINNER[app.tick_count % SPINNER.len()];
+        lines.push(Line::from(vec![
+            Span::raw("  "),
+            frame.yellow().bold(),
+            "  Adding to queue…".yellow(),
+        ]));
     } else {
-        "r".dim()
-    };
-    let desc_r: Span = if enqueue_active {
-        Span::raw("  Add to queue")
-    } else {
-        "  Add to queue".dim()
-    };
-
-    lines.push(Line::from(vec![
-        Span::raw("  "),
-        key_r,
-        desc_r,
-        Span::raw("     "),
-        "o".cyan().bold(),
-        Span::raw("  Open in browser"),
-    ]));
+        // r is active for any PR not currently in the merge queue
+        let enqueue_active = pr.merge_queue.is_none();
+        let key_r: Span = if enqueue_active {
+            "r".cyan().bold()
+        } else {
+            "r".dim()
+        };
+        let desc_r: Span = if enqueue_active {
+            Span::raw("  Add to queue")
+        } else {
+            "  Add to queue".dim()
+        };
+        lines.push(Line::from(vec![
+            Span::raw("  "),
+            key_r,
+            desc_r,
+            Span::raw("     "),
+            "o".cyan().bold(),
+            Span::raw("  Open in browser"),
+        ]));
+    }
 
     f.render_widget(Paragraph::new(lines).block(block), area);
 }

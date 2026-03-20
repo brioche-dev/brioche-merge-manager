@@ -64,7 +64,17 @@ fn render_header(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
 }
 
 fn render_legend(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
-    let status_line = if let Some((msg, _)) = &app.status_msg {
+    const SPINNER: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    let status_line = if let Some(pr_number) = app.enqueue_pending {
+        let frame = SPINNER[app.tick_count % SPINNER.len()];
+        Line::from(vec![
+            Span::raw(" "),
+            frame.yellow().bold(),
+            format!("  Adding PR #{pr_number} to merge queue…")
+                .yellow()
+                .bold(),
+        ])
+    } else if let Some((msg, _)) = &app.status_msg {
         Line::from(vec![
             Span::raw(" "),
             "▶ ".yellow(),
