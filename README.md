@@ -127,7 +127,8 @@ cargo run
 |---|---|
 | `r` | Add selected PR to merge queue (works for ready and removed PRs) |
 | `o` | Open selected PR in browser |
-| `d` | Open diff panel (focuses it for scrolling) |
+| `Enter` | Toggle diff panel |
+| `d` | Focus/unfocus diff panel for scrolling (when open) |
 | `R` | Refresh PR list |
 | `Ctrl+C` | Quit |
 
@@ -141,8 +142,8 @@ cargo run
 | `Page Down` | Scroll diff down one page |
 | `Home` | Jump to top of diff |
 | `End` | Jump to bottom of diff |
-| `Esc` | Unfocus diff (restore PR list navigation) |
-| `d` | Close diff panel |
+| `d` | Unfocus diff (restore PR list navigation) |
+| `Enter` | Close diff panel |
 
 ### Filters
 

@@ -132,8 +132,14 @@ pub fn render_pr_list(f: &mut Frame, app: &mut App, area: Rect) {
                 rollup_sym.fg(rollup_color)
             };
 
+            let select_mark: Span = if app.selected_prs.contains(&pr.number) {
+                "✓".cyan().bold()
+            } else {
+                Span::raw(" ")
+            };
+
             let line = Line::from(vec![
-                Span::raw(" "),
+                select_mark,
                 "●".fg(dot_color),
                 format!(" #{:<5}", pr.number).dim(),
                 format!(" {status_hint} ").fg(dot_color),
@@ -157,13 +163,29 @@ pub fn render_pr_list(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_stateful_widget(list, inner[1], &mut app.list_state);
 }
 
-fn render_filter_tabs(f: &mut Frame, app: &App, area: Rect) {
+fn render_filter_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     let mut spans = vec![Span::raw(" ")];
+    let mut x = area.x + 1; // skip the leading space
+
+    app.filter_tab_rects.clear();
 
     for filter in Filter::ALL {
         let count = app.count_for(filter);
         let is_active = *filter == app.active_filter;
         let label = format!(" {} ({}) ", filter.label(), count);
+        // ▶ is 1 terminal column; label is all ASCII so .len() == display width.
+        let tab_width = if is_active {
+            1 + label.len() as u16
+        } else {
+            label.len() as u16
+        };
+
+        app.filter_tab_rects.push(Rect {
+            x,
+            y: area.y,
+            width: tab_width,
+            height: 1,
+        });
 
         if is_active {
             spans.push("▶".cyan().on_cyan());
@@ -172,6 +194,7 @@ fn render_filter_tabs(f: &mut Frame, app: &App, area: Rect) {
             spans.push(label.dim());
         }
         spans.push(Span::raw(" "));
+        x += tab_width + 1; // +1 for trailing space
     }
 
     f.render_widget(Paragraph::new(Line::from(spans)), area);

@@ -438,6 +438,56 @@ fn format_graphql_errors(errors: &serde_json::Value) -> String {
 // Mutations
 // ---------------------------------------------------------------------------
 
+/// Enqueue multiple PRs in a single GraphQL request using aliased mutations.
+/// Returns a vec of `(pr_number, Result<MergeQueueEntry>)` — one entry per input.
+pub async fn enqueue_pull_requests_batch(
+    token: &str,
+    targets: &[(u64, String)], // (pr_number, node_id)
+) -> Result<Vec<(u64, Result<MergeQueueEntry>)>> {
+    if targets.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Build a mutation with one aliased field per target.
+    let mut mutation = String::from("mutation BulkEnqueue {");
+    for (i, (_, node_id)) in targets.iter().enumerate() {
+        mutation.push_str(&format!(
+            "\n  pr{i}: enqueuePullRequest(input: {{ pullRequestId: \"{node_id}\" }}) {{ mergeQueueEntry {{ id state position }} }}"
+        ));
+    }
+    mutation.push_str("\n}");
+
+    let body = json!({ "query": mutation });
+
+    let client = reqwest::Client::new();
+    let response = graphql_post(&client, token, &body).await?;
+    let data = &response["data"];
+
+    let mut results = Vec::with_capacity(targets.len());
+    for (i, (pr_number, _)) in targets.iter().enumerate() {
+        let alias = format!("pr{i}");
+        let entry_val = &data[&alias]["mergeQueueEntry"];
+        let id = entry_val["id"].as_str().filter(|s| !s.is_empty());
+        let result = match id {
+            Some(id) => {
+                let state = MergeQueueState::from(entry_val["state"].as_str().unwrap_or("QUEUED"));
+                let position = entry_val["position"].as_u64().unwrap_or(0) as u32;
+                Ok(MergeQueueEntry {
+                    id: id.to_string(),
+                    state,
+                    position,
+                })
+            }
+            None => Err(anyhow!(
+                "no mergeQueueEntry returned for PR #{pr_number} — already queued or ineligible"
+            )),
+        };
+        results.push((*pr_number, result));
+    }
+
+    Ok(results)
+}
+
 pub async fn enqueue_pull_request(token: &str, pull_request_id: &str) -> Result<MergeQueueEntry> {
     let mutation = r#"
         mutation EnqueuePR($pullRequestId: ID!) {

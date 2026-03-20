@@ -13,33 +13,46 @@ use ratatui::{
 use crate::app::App;
 
 pub fn render(f: &mut Frame, app: &mut App) {
-    let chunks = Layout::default()
+    // Header and legend always span full width.
+    let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1), // header
-            Constraint::Fill(2),   // pr list
-            Constraint::Fill(3),   // pr detail / diff
+            Constraint::Fill(1),   // main content
             Constraint::Length(3), // legend
         ])
         .split(f.area());
 
-    render_header(f, app, chunks[0]);
-    pr_list::render_pr_list(f, app, chunks[1]);
+    render_header(f, app, rows[0]);
+    render_legend(f, app, rows[2]);
 
     if app.show_diff {
-        let detail_chunks = Layout::default()
+        // Split the main content area horizontally: left = list+detail, right = diff.
+        let cols = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Fill(3), Constraint::Fill(2)])
-            .split(chunks[2]);
-        // Keep diff_height in sync so PageUp/Down scroll the right amount.
-        app.diff_height = detail_chunks[1].height.saturating_sub(2) as usize;
-        pr_detail::render_pr_detail(f, app, detail_chunks[0]);
-        pr_diff::render_pr_diff(f, app, detail_chunks[1]);
-    } else {
-        pr_detail::render_pr_detail(f, app, chunks[2]);
-    }
+            .constraints([Constraint::Fill(2), Constraint::Fill(3)])
+            .split(rows[1]);
 
-    render_legend(f, app, chunks[3]);
+        let left = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Fill(2), Constraint::Fill(3)])
+            .split(cols[0]);
+
+        app.diff_height = cols[1].height.saturating_sub(2) as usize;
+        app.diff_panel_rect = cols[1];
+
+        pr_list::render_pr_list(f, app, left[0]);
+        pr_detail::render_pr_detail(f, app, left[1]);
+        pr_diff::render_pr_diff(f, app, cols[1]);
+    } else {
+        let left = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Fill(2), Constraint::Fill(3)])
+            .split(rows[1]);
+
+        pr_list::render_pr_list(f, app, left[0]);
+        pr_detail::render_pr_detail(f, app, left[1]);
+    }
 }
 
 fn render_header(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
@@ -65,14 +78,17 @@ fn render_header(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
 
 fn render_legend(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     const SPINNER: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-    let status_line = if let Some(pr_number) = app.enqueue_pending {
+    let status_line = if app.enqueue_in_flight {
         let frame = SPINNER[app.tick_count % SPINNER.len()];
+        let msg = if app.enqueue_total == 1 {
+            "  Adding PR to merge queue…".to_string()
+        } else {
+            format!("  Adding {} PRs to merge queue…", app.enqueue_total)
+        };
         Line::from(vec![
             Span::raw(" "),
             frame.yellow().bold(),
-            format!("  Adding PR #{pr_number} to merge queue…")
-                .yellow()
-                .bold(),
+            msg.yellow().bold(),
         ])
     } else if let Some((msg, _)) = &app.status_msg {
         Line::from(vec![
@@ -103,9 +119,9 @@ fn render_legend(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
             ]),
             Line::from(vec![
                 Span::raw(" "),
-                key("Esc"),
-                desc(" Unfocus diff  "),
                 key("d"),
+                desc(" Unfocus diff  "),
+                key("Enter"),
                 desc(" Close diff  "),
                 key("o"),
                 desc(" Open in browser  "),
@@ -132,12 +148,18 @@ fn render_legend(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
             ]),
             Line::from(vec![
                 Span::raw(" "),
+                key("Space"),
+                desc(" Select  "),
+                key("a"),
+                desc(" Select all  "),
+                key("A"),
+                desc(" Deselect all  "),
                 key("r"),
                 desc(" Add to queue  "),
                 key("o"),
-                desc(" Open in browser  "),
-                key("d"),
-                desc(" Diff  "),
+                desc(" Open  "),
+                key("Enter"),
+                desc(" Toggle diff  "),
                 key("Ctrl+C"),
                 desc(" Quit"),
             ]),

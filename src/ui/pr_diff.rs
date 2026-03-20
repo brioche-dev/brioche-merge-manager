@@ -22,7 +22,7 @@ pub fn render_pr_diff(f: &mut Frame, app: &App, area: Rect) {
         Line::from(vec![
             Span::raw(" "),
             "Diff".black().on_cyan().bold(),
-            "  ↑↓/jk scroll  Esc unfocus  d close".dim(),
+            "  ↑↓/jk scroll  d unfocus  Enter close".dim(),
             Span::raw(" "),
         ])
     } else {
@@ -61,6 +61,13 @@ pub fn render_pr_diff(f: &mut Frame, app: &App, area: Rect) {
             let total_add: u32 = files.iter().map(|f| f.additions).sum();
             let total_del: u32 = files.iter().map(|f| f.deletions).sum();
 
+            // project.bri files sort to the top; everything else keeps its original order.
+            let mut sorted_files: Vec<&FileDiff> = files.iter().collect();
+            sorted_files.sort_by_key(|f| {
+                let name = f.filename.as_str();
+                u8::from(name != "project.bri" && !name.ends_with("/project.bri"))
+            });
+
             let summary = Line::from(vec![
                 Span::raw("  "),
                 format!("{} files", files.len()).bold(),
@@ -76,7 +83,7 @@ pub fn render_pr_diff(f: &mut Frame, app: &App, area: Rect) {
                 Line::from("  ──────────────────────────────────────".dark_gray()),
             ];
 
-            for file in files {
+            for file in sorted_files {
                 lines.extend(file_lines(file, inner_width));
             }
 

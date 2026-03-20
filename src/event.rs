@@ -1,9 +1,13 @@
-use crossterm::event::{self, Event as CrosstermEvent, KeyCode, KeyModifiers};
+use crossterm::event::{
+    self, Event as CrosstermEvent, KeyCode, KeyModifiers, MouseButton, MouseEventKind,
+};
 use tokio::sync::mpsc::UnboundedSender;
 
 #[derive(Debug, Clone)]
 pub enum Event {
     Key(KeyCode, KeyModifiers),
+    /// Left mouse button click at (column, row).
+    Mouse(u16, u16),
     Tick,
 }
 
@@ -23,6 +27,13 @@ pub fn spawn_event_task(tx: UnboundedSender<Event>) {
             match result {
                 Ok(Some(CrosstermEvent::Key(key))) => {
                     if tx.send(Event::Key(key.code, key.modifiers)).is_err() {
+                        break;
+                    }
+                }
+                Ok(Some(CrosstermEvent::Mouse(mouse))) => {
+                    if mouse.kind == MouseEventKind::Down(MouseButton::Left)
+                        && tx.send(Event::Mouse(mouse.column, mouse.row)).is_err()
+                    {
                         break;
                     }
                 }

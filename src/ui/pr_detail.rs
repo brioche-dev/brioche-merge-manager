@@ -170,8 +170,8 @@ pub fn render_pr_detail(f: &mut Frame, app: &App, area: Rect) {
     ));
     lines.push(Line::raw(""));
 
-    // Spinner while enqueue is in-flight for this PR
-    if app.enqueue_pending == Some(pr.number) {
+    // Spinner while enqueue is in-flight
+    if app.enqueue_in_flight {
         const SPINNER: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
         let frame = SPINNER[app.tick_count % SPINNER.len()];
         lines.push(Line::from(vec![

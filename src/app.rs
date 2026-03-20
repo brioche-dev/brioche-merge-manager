@@ -1,9 +1,10 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyModifiers};
-use ratatui::widgets::ListState;
+use ratatui::{layout::Rect, widgets::ListState};
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::config::Config;
@@ -95,6 +96,9 @@ pub enum Action {
     CycleFilterNext,
     CycleFilterPrev,
     EnqueueSelected,
+    ToggleSelectPr,
+    SelectAllVisible,
+    DeselectAll,
     OpenInBrowser,
     Quit,
     DataLoaded(Vec<PullRequest>),
@@ -106,6 +110,7 @@ pub enum Action {
     NavigateHome,
     NavigateEnd,
     ToggleDiff,
+    FocusDiff,
     UnfocusDiff,
     DiffLoaded(u64, Vec<FileDiff>),
     DiffError(u64, String),
@@ -113,6 +118,8 @@ pub enum Action {
     DiffScrollDown(usize),
     PrEnqueued(u64, MergeQueueEntry),
     EnqueueFailed,
+    BulkEnqueued(Vec<(u64, Result<MergeQueueEntry, String>)>),
+    SetFilter(Filter),
 }
 
 // ---------------------------------------------------------------------------
@@ -144,12 +151,16 @@ pub struct App {
     pub diff_scroll: usize,
     /// Height of the visible diff area in rows (updated each render frame).
     pub diff_height: usize,
-    /// PR number currently being enqueued, if any.
-    pub enqueue_pending: Option<u64>,
-    /// Set when the enqueue response has arrived but the spinner hasn't been
-    /// cleared yet — Tick clears it so the spinner is visible for at least
-    /// one full tick cycle.
-    pub enqueue_done: bool,
+    /// Clickable rects for each filter tab (parallel to Filter::ALL). Updated each render frame.
+    pub filter_tab_rects: Vec<Rect>,
+    /// Area of the diff panel. Updated each render frame; used for click-to-focus.
+    pub diff_panel_rect: Rect,
+    /// PR numbers toggled into the multi-select set.
+    pub selected_prs: HashSet<u64>,
+    /// True while a batch enqueue request is in flight.
+    pub enqueue_in_flight: bool,
+    /// Number of PRs dispatched in the current enqueue run (0 = idle).
+    pub enqueue_total: usize,
     /// Incremented on every Tick — used to drive spinner frames.
     pub tick_count: usize,
 }
@@ -176,18 +187,33 @@ impl App {
             diff_cache: std::collections::HashMap::new(),
             diff_scroll: 0,
             diff_height: 10,
-            enqueue_pending: None,
-            enqueue_done: false,
+            filter_tab_rects: Vec::new(),
+            diff_panel_rect: Rect::default(),
+            selected_prs: HashSet::new(),
+            enqueue_in_flight: false,
+            enqueue_total: 0,
             tick_count: 0,
         }
     }
 
     /// PRs visible under the current filter.
+    /// For the Queued filter, results are sorted by merge queue position ascending
+    /// (longest in queue first). All other filters keep the global sort order.
     pub fn visible_prs(&self) -> Vec<&PullRequest> {
-        self.prs
+        let mut prs: Vec<&PullRequest> = self
+            .prs
             .iter()
             .filter(|pr| self.active_filter.matches(pr))
-            .collect()
+            .collect();
+        if self.active_filter == Filter::Queued {
+            prs.sort_by_key(|pr| {
+                pr.merge_queue
+                    .as_ref()
+                    .map(|e| e.position)
+                    .unwrap_or(u32::MAX)
+            });
+        }
+        prs
     }
 
     /// Count of PRs matching a given filter (for tab labels).
@@ -232,6 +258,31 @@ impl App {
     pub fn handle_event(&self, event: Event) -> Option<Action> {
         match event {
             Event::Tick => Some(Action::Tick),
+            Event::Mouse(col, row) => {
+                // Click on the diff panel focuses it (or unfocuses if already focused).
+                if self.show_diff {
+                    let r = &self.diff_panel_rect;
+                    if col >= r.x && col < r.x + r.width && row >= r.y && row < r.y + r.height {
+                        return Some(if self.diff_focused {
+                            Action::UnfocusDiff
+                        } else {
+                            Action::FocusDiff
+                        });
+                    }
+                }
+                for (i, rect) in self.filter_tab_rects.iter().enumerate() {
+                    if col >= rect.x
+                        && col < rect.x + rect.width
+                        && row >= rect.y
+                        && row < rect.y + rect.height
+                    {
+                        if let Some(filter) = Filter::ALL.get(i) {
+                            return Some(Action::SetFilter(filter.clone()));
+                        }
+                    }
+                }
+                None
+            }
             Event::Key(code, modifiers) => {
                 if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('c') {
                     return Some(Action::Quit);
@@ -245,8 +296,8 @@ impl App {
                         KeyCode::PageDown => Some(Action::DiffScrollDown(self.diff_height.max(1))),
                         KeyCode::Home => Some(Action::DiffScrollUp(usize::MAX)),
                         KeyCode::End => Some(Action::DiffScrollDown(usize::MAX)),
-                        KeyCode::Esc => Some(Action::UnfocusDiff),
-                        KeyCode::Char('d') => Some(Action::ToggleDiff),
+                        KeyCode::Char('d') => Some(Action::UnfocusDiff),
+                        KeyCode::Enter => Some(Action::ToggleDiff),
                         KeyCode::Char('R') => Some(Action::Refresh),
                         KeyCode::Char('o') => Some(Action::OpenInBrowser),
                         _ => None,
@@ -261,10 +312,24 @@ impl App {
                     KeyCode::End => Some(Action::NavigateEnd),
                     KeyCode::Tab => Some(Action::CycleFilterNext),
                     KeyCode::BackTab => Some(Action::CycleFilterPrev),
+                    KeyCode::Char(' ') => Some(Action::ToggleSelectPr),
+                    KeyCode::Char('a') => Some(Action::SelectAllVisible),
+                    KeyCode::Char('A') => Some(Action::DeselectAll),
                     KeyCode::Char('r') => Some(Action::EnqueueSelected),
                     KeyCode::Char('R') => Some(Action::Refresh),
                     KeyCode::Char('o') => Some(Action::OpenInBrowser),
-                    KeyCode::Char('d') => Some(Action::ToggleDiff),
+                    KeyCode::Enter => Some(Action::ToggleDiff),
+                    KeyCode::Char('d') => {
+                        if self.show_diff {
+                            Some(if self.diff_focused {
+                                Action::UnfocusDiff
+                            } else {
+                                Action::FocusDiff
+                            })
+                        } else {
+                            None
+                        }
+                    }
                     _ => None,
                 }
             }
@@ -279,10 +344,6 @@ impl App {
         match action {
             Action::Tick => {
                 self.tick_count = self.tick_count.wrapping_add(1);
-                if self.enqueue_done {
-                    self.enqueue_pending = None;
-                    self.enqueue_done = false;
-                }
                 if let Some((_, ts)) = &self.status_msg {
                     if ts.elapsed().as_secs() >= 3 {
                         self.status_msg = None;
@@ -407,14 +468,72 @@ impl App {
                 self.clamp_selection();
             }
 
-            Action::EnqueueSelected => {
+            Action::SetFilter(filter) => {
+                if self.active_filter != filter {
+                    self.active_filter = filter;
+                    self.selected = 0;
+                    self.clamp_selection();
+                }
+            }
+
+            Action::ToggleSelectPr => {
                 if let Some(pr) = self.selected_pr() {
-                    if pr.merge_queue.is_none() && self.enqueue_pending.is_none() {
+                    let n = pr.number;
+                    if !self.selected_prs.remove(&n) {
+                        self.selected_prs.insert(n);
+                    }
+                }
+            }
+
+            Action::SelectAllVisible => {
+                let numbers: Vec<u64> = self.visible_prs().iter().map(|pr| pr.number).collect();
+                for n in numbers {
+                    self.selected_prs.insert(n);
+                }
+            }
+
+            Action::DeselectAll => {
+                self.selected_prs.clear();
+            }
+
+            Action::EnqueueSelected => {
+                if self.enqueue_in_flight {
+                    return Ok(());
+                }
+                if !self.selected_prs.is_empty() {
+                    // Batch path: enqueue all selected PRs not already in the queue.
+                    let targets: Vec<(u64, String)> = self
+                        .prs
+                        .iter()
+                        .filter(|pr| {
+                            self.selected_prs.contains(&pr.number) && pr.merge_queue.is_none()
+                        })
+                        .map(|pr| (pr.number, pr.node_id.clone()))
+                        .collect();
+                    self.selected_prs.clear();
+                    if !targets.is_empty() {
+                        self.enqueue_in_flight = true;
+                        self.enqueue_total = targets.len();
+                        let github = Arc::clone(&self.github);
+                        let tx = action_tx.clone();
+                        tokio::spawn(async move {
+                            let results = github.enqueue_prs(&targets).await;
+                            let converted = results
+                                .into_iter()
+                                .map(|(n, r)| (n, r.map_err(|e| e.to_string())))
+                                .collect();
+                            let _ = tx.send(Action::BulkEnqueued(converted));
+                        });
+                    }
+                } else if let Some(pr) = self.selected_pr() {
+                    // Single-PR fallback path.
+                    if pr.merge_queue.is_none() {
                         let github = Arc::clone(&self.github);
                         let node_id = pr.node_id.clone();
                         let pr_number = pr.number;
                         let tx = action_tx.clone();
-                        self.enqueue_pending = Some(pr_number);
+                        self.enqueue_in_flight = true;
+                        self.enqueue_total = 1;
                         tokio::spawn(async move {
                             match github.enqueue_pr(&node_id).await {
                                 Ok(entry) => {
@@ -432,12 +551,51 @@ impl App {
                 }
             }
 
+            Action::BulkEnqueued(results) => {
+                self.enqueue_in_flight = false;
+                let mut ok_count = 0usize;
+                let mut errors: Vec<String> = Vec::new();
+                for (pr_number, result) in results {
+                    match result {
+                        Ok(entry) => {
+                            ok_count += 1;
+                            if let Some(pr) = self.prs.iter_mut().find(|p| p.number == pr_number) {
+                                pr.merge_queue = Some(entry);
+                                pr.status = PullRequest::compute_status(
+                                    &pr.mergeable_state,
+                                    &pr.merge_queue,
+                                    pr.is_draft,
+                                    &pr.last_queue_removal,
+                                );
+                            }
+                        }
+                        Err(msg) => {
+                            errors.push(format!("#{pr_number}: {msg}"));
+                        }
+                    }
+                }
+                self.clamp_selection();
+                let status = if errors.is_empty() {
+                    format!(
+                        "{ok_count} PR{} added to merge queue",
+                        if ok_count == 1 { "" } else { "s" }
+                    )
+                } else {
+                    format!(
+                        "{ok_count} PR{} added; {} failed",
+                        if ok_count == 1 { "" } else { "s" },
+                        errors.len()
+                    )
+                };
+                self.status_msg = Some((status, Instant::now()));
+            }
+
             Action::EnqueueFailed => {
-                self.enqueue_done = true;
+                self.enqueue_in_flight = false;
             }
 
             Action::PrEnqueued(pr_number, entry) => {
-                self.enqueue_done = true;
+                self.enqueue_in_flight = false;
                 // Update the PR in-place — no full reload needed.
                 if let Some(pr) = self.prs.iter_mut().find(|p| p.number == pr_number) {
                     pr.merge_queue = Some(entry);
@@ -448,15 +606,7 @@ impl App {
                         &pr.last_queue_removal,
                     );
                 }
-                // Switch to Queued filter and select the PR.
-                self.active_filter = Filter::Queued;
-                let new_idx = self
-                    .visible_prs()
-                    .iter()
-                    .position(|p| p.number == pr_number)
-                    .unwrap_or(0);
-                self.selected = new_idx;
-                self.list_state.select(Some(new_idx));
+                self.clamp_selection();
                 self.status_msg = Some((
                     format!("PR #{pr_number} added to merge queue"),
                     Instant::now(),
@@ -491,14 +641,18 @@ impl App {
                     self.show_diff = false;
                     self.diff_focused = false;
                 } else {
-                    // Open and immediately focus the diff panel.
+                    // Open the diff panel without stealing focus.
                     self.show_diff = true;
-                    self.diff_focused = true;
+                    self.diff_focused = false;
                     self.diff_scroll = 0;
                     if let Some(pr) = self.selected_pr() {
                         self.fetch_diff_if_needed(pr.number, action_tx);
                     }
                 }
+            }
+
+            Action::FocusDiff => {
+                self.diff_focused = true;
             }
 
             Action::UnfocusDiff => {
