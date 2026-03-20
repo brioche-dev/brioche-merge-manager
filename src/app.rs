@@ -17,10 +17,10 @@ use crate::github::GitHubClient;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Filter {
-    /// ReadyToMerge + FailedMerge (excludes InQueue / drafts)
+    /// ReadyToMerge + removed-from-queue (excludes InQueue / drafts)
     Active,
     Ready,
-    Failed,
+    Removed,
     Queued,
 }
 
@@ -28,7 +28,7 @@ impl Filter {
     pub const ALL: &'static [Filter] = &[
         Filter::Active,
         Filter::Ready,
-        Filter::Failed,
+        Filter::Removed,
         Filter::Queued,
     ];
 
@@ -36,27 +36,25 @@ impl Filter {
         match self {
             Self::Active => "Active",
             Self::Ready => "Ready",
-            Self::Failed => "Failed",
+            Self::Removed => "Removed",
             Self::Queued => "Queued",
         }
     }
 
     pub fn matches(&self, pr: &PullRequest) -> bool {
         match self {
-            Self::Active => {
-                pr.status == PrStatus::ReadyToMerge || pr.status == PrStatus::FailedMerge
-            }
-            Self::Ready => pr.status == PrStatus::ReadyToMerge,
-            Self::Failed => pr.status == PrStatus::FailedMerge,
-            Self::Queued => pr.status == PrStatus::InQueue,
+            Self::Active => true,
+            Self::Ready => pr.status == PrStatus::ReadyToMerge && !pr.is_draft,
+            Self::Removed => pr.last_queue_removal.is_some() && pr.merge_queue.is_none(),
+            Self::Queued => pr.merge_queue.is_some(),
         }
     }
 
     pub fn next(&self) -> Self {
         match self {
             Self::Active => Self::Ready,
-            Self::Ready => Self::Failed,
-            Self::Failed => Self::Queued,
+            Self::Ready => Self::Removed,
+            Self::Removed => Self::Queued,
             Self::Queued => Self::Active,
         }
     }
@@ -65,8 +63,8 @@ impl Filter {
         match self {
             Self::Active => Self::Queued,
             Self::Ready => Self::Active,
-            Self::Failed => Self::Ready,
-            Self::Queued => Self::Failed,
+            Self::Removed => Self::Ready,
+            Self::Queued => Self::Removed,
         }
     }
 }
@@ -425,18 +423,13 @@ impl App {
                     if pr.status == PrStatus::FailedMerge {
                         let github = Arc::clone(&self.github);
                         let node_id = pr.node_id.clone();
-                        let queue_entry_id = pr
-                            .merge_queue
-                            .as_ref()
-                            .map(|e| e.id.clone())
-                            .unwrap_or_default();
                         let pr_number = pr.number;
                         let tx = action_tx.clone();
                         tokio::spawn(async move {
-                            match github.retry_pr(&node_id, &queue_entry_id).await {
+                            match github.enqueue_pr(&node_id).await {
                                 Ok(_) => {
                                     let _ = tx.send(Action::StatusMessage(format!(
-                                        "PR #{pr_number} re-queued for merge"
+                                        "PR #{pr_number} added to merge queue"
                                     )));
                                     let _ = tx.send(Action::Refresh);
                                 }

@@ -3,7 +3,7 @@ use tracing::debug;
 
 use crate::config::Config;
 
-use super::graphql::{dequeue_pull_request, enqueue_pull_request, fetch_all_prs_bulk};
+use super::graphql::{enqueue_pull_request, fetch_all_prs_bulk};
 use super::models::{FileDiff, MergeQueueEntry, PullRequest};
 use super::rest::{build_pull_requests, fetch_pr_files};
 
@@ -45,11 +45,5 @@ impl GitHubClient {
     pub async fn fetch_diff(&self, pr_number: u64) -> Result<Vec<FileDiff>> {
         debug!(pr = pr_number, "fetch_diff");
         fetch_pr_files(&self.token, &self.owner, &self.repo, pr_number).await
-    }
-
-    pub async fn retry_pr(&self, node_id: &str, queue_entry_id: &str) -> Result<MergeQueueEntry> {
-        debug!(%node_id, %queue_entry_id, "retry_pr");
-        dequeue_pull_request(&self.token, queue_entry_id).await?;
-        enqueue_pull_request(&self.token, node_id).await
     }
 }

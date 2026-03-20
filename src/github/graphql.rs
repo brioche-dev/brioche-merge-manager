@@ -3,8 +3,11 @@ use serde_json::json;
 use tokio::task::JoinSet;
 use tracing::{debug, trace};
 
+use chrono::{DateTime, Utc};
+
 use super::models::{
-    CheckRollupState, MergeQueueEntry, MergeQueueState, MergeableState, PullRequest, ReviewDecision,
+    CheckRollupState, MergeQueueEntry, MergeQueueState, MergeableState, PullRequest, QueueRemoval,
+    QueueRemovalReason, ReviewDecision,
 };
 
 const GRAPHQL_URL: &str = "https://api.github.com/graphql";
@@ -266,6 +269,14 @@ async fn fetch_pr_page(
                 commits(last: 1) {
                   nodes { commit { statusCheckRollup { state } } }
                 }
+                timelineItems(last: 5, itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT]) {
+                  nodes {
+                    ... on RemovedFromMergeQueueEvent {
+                      createdAt
+                      reason
+                    }
+                  }
+                }
               }
             }
           }
@@ -295,6 +306,7 @@ async fn fetch_pr_page(
                 merge_state = node["mergeStateStatus"].as_str().unwrap_or("null"),
                 rollup = pr.check_rollup.as_ref().map(|r| r.label()).unwrap_or("none"),
                 review = pr.review_decision.as_ref().map(|r| r.label()).unwrap_or("none"),
+                queue_removal = pr.last_queue_removal.as_ref().map(|r| r.reason.label()).unwrap_or("none"),
                 status = ?pr.status,
                 "parsed PR",
             );
@@ -327,6 +339,7 @@ fn parse_pr_node(node: &serde_json::Value) -> PullRequest {
     };
 
     let merge_queue = parse_merge_queue_entry(&node["mergeQueueEntry"]);
+    let last_queue_removal = parse_queue_removal(&node["timelineItems"]);
 
     let check_rollup = node["commits"]["nodes"]
         .as_array()
@@ -338,7 +351,12 @@ fn parse_pr_node(node: &serde_json::Value) -> PullRequest {
         .as_str()
         .and_then(ReviewDecision::from_graphql);
 
-    let status = PullRequest::compute_status(&mergeable_state, &merge_queue, is_draft);
+    let status = PullRequest::compute_status(
+        &mergeable_state,
+        &merge_queue,
+        is_draft,
+        &last_queue_removal,
+    );
 
     PullRequest {
         number,
@@ -352,7 +370,25 @@ fn parse_pr_node(node: &serde_json::Value) -> PullRequest {
         review_decision,
         is_draft,
         status,
+        last_queue_removal,
     }
+}
+
+/// Parse the most recent `REMOVED_FROM_MERGE_QUEUE_EVENT` for this PR.
+/// No time limit — any removal on a still-open PR is relevant.
+fn parse_queue_removal(timeline: &serde_json::Value) -> Option<QueueRemoval> {
+    let nodes = timeline["nodes"].as_array()?;
+    // Events are in chronological order; take the most recent (last).
+    let event = nodes.iter().rev().find(|n| !n["createdAt"].is_null())?;
+    let created_at = event["createdAt"]
+        .as_str()
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&Utc))?;
+    let reason = QueueRemovalReason::from(event["reason"].as_str().unwrap_or(""));
+    Some(QueueRemoval {
+        at: created_at,
+        reason,
+    })
 }
 
 fn merge_state_status_to_state(s: &str) -> MergeableState {
@@ -413,23 +449,4 @@ pub async fn enqueue_pull_request(token: &str, pull_request_id: &str) -> Result<
         state,
         position,
     })
-}
-
-pub async fn dequeue_pull_request(token: &str, entry_id: &str) -> Result<()> {
-    let mutation = r#"
-        mutation DequeuePR($id: ID!) {
-          dequeuePullRequest(input: { id: $id }) {
-            mergeQueueEntry { id }
-          }
-        }
-    "#;
-
-    let body = json!({
-        "query": mutation,
-        "variables": { "id": entry_id }
-    });
-
-    let client = reqwest::Client::new();
-    graphql_post(&client, token, &body).await?;
-    Ok(())
 }

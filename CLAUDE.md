@@ -23,6 +23,17 @@ cargo run                          # run (requires GITHUB_TOKEN in env or .env)
 
 There are no tests yet. `cargo build` is the verification step.
 
+## End-of-session checklist
+
+Run both of these before finishing any session:
+
+```bash
+cargo clippy -- -D warnings        # must be clean
+cargo fmt --check                  # must produce no diff
+```
+
+Fix any issues before stopping. If `cargo fmt --check` fails, run `cargo fmt` to fix it.
+
 ---
 
 ## Project structure

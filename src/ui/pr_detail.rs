@@ -8,7 +8,7 @@ use ratatui::{
 
 use crate::{
     app::App,
-    github::models::{MergeQueueState, PrStatus},
+    github::models::{MergeQueueState, PrStatus, QueueRemovalReason},
 };
 
 pub fn render_pr_detail(f: &mut Frame, app: &App, area: Rect) {
@@ -144,6 +144,25 @@ pub fn render_pr_detail(f: &mut Frame, app: &App, area: Rect) {
         url_display.dim(),
     ]));
 
+    // Queue removal reason (shown when PR was recently ejected from the queue)
+    if let Some(removal) = &pr.last_queue_removal {
+        let removal_color = match removal.reason {
+            QueueRemovalReason::FailedChecks => Color::Red,
+            QueueRemovalReason::MergeConflict => Color::Red,
+            QueueRemovalReason::RejectedByRule => Color::Yellow,
+            QueueRemovalReason::Other => Color::Reset,
+        };
+        let ago = format_ago(removal.at);
+        lines.push(Line::from(vec![
+            Span::styled("  Removed ", label_style),
+            Span::styled("│", sep_style),
+            Span::raw("  "),
+            "✗  ".fg(removal_color),
+            removal.reason.label().fg(removal_color),
+            format!("  {ago}").dim(),
+        ]));
+    }
+
     // Separator before actions
     lines.push(Line::raw(""));
     lines.push(Line::from(
@@ -189,4 +208,19 @@ pub fn render_pr_detail(f: &mut Frame, app: &App, area: Rect) {
     ]));
 
     f.render_widget(Paragraph::new(lines).block(block), area);
+}
+
+/// Format a UTC timestamp as a human-readable relative time string.
+fn format_ago(at: chrono::DateTime<chrono::Utc>) -> String {
+    let secs = (chrono::Utc::now() - at).num_seconds().max(0) as u64;
+    if secs < 60 {
+        format!("{secs}s ago")
+    } else if secs < 3600 {
+        format!("{}m ago", secs / 60)
+    } else if secs < 86400 {
+        format!("{}h {}m ago", secs / 3600, (secs % 3600) / 60)
+    } else {
+        let days = secs / 86400;
+        format!("{days}d ago")
+    }
 }

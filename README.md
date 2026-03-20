@@ -3,7 +3,7 @@
 A terminal UI for managing GitHub merge queues on the
 [brioche-dev/brioche-packages](https://github.com/brioche-dev/brioche-packages) repository.
 
-Shows all open PRs that are **ready to merge** or **failed merging**, lets you
+Shows all open PRs, highlights which are **ready to queue** or **removed from the merge queue**, lets you
 queue or retry them in GitHub's native merge queue, and opens any PR in your
 browser — all without leaving the terminal.
 
@@ -14,11 +14,12 @@ browser — all without leaving the terminal.
 ```
  🍞 Brioche Merge Manager   brioche-dev/brioche-packages  ·  312 PRs
 ╭ Pull Requests ───────────────────────────────────────────────────────╮
-│ ▶ Active (12)   Ready (9)   Failed (3)   Queued (47)                 │
+│ ▶ Active (312)   Ready (9)   Removed (3)   Queued (47)               │
 │                                                                       │
 │ ▶ ● #3712  ready  ✓  feat: add python package          @alice        │
 │   ● #3698  ready  ✓  chore: bump openssl                @bob         │
-│   ● #3685  failed ✗  fix: use correct cmake flags       @carol       │
+│   ● #3685  removed ✗  fix: use correct cmake flags     @carol        │
+│   ● #3601  draft     wip: refactor build system        @dave  draft  │
 ╰───────────────────────────────────────────────────────────────────────╯
 ╭ ● PR #3712 ──────────────────────────╮╭ Diff  d to scroll ──────────╮
 │                                       ││                              │
@@ -125,7 +126,7 @@ cargo run
 | Key | Action |
 |---|---|
 | `q` | Add selected PR to merge queue |
-| `r` | Retry selected PR (dequeue then re-queue) |
+| `r` | Re-queue selected PR (for removed PRs) |
 | `o` | Open selected PR in browser |
 | `d` | Open diff panel (focuses it for scrolling) |
 | `R` | Refresh PR list |
@@ -150,9 +151,9 @@ The tab bar at the top of the PR list cycles through four views:
 
 | Filter | Shows |
 |---|---|
-| **Active** | Ready-to-merge + failed PRs (default) |
-| **Ready** | PRs with a clean merge state, not yet queued |
-| **Failed** | PRs that failed in the merge queue (or are blocked) |
+| **Active** | All open PRs (default) |
+| **Ready** | Non-draft PRs with a clean merge state, not yet queued |
+| **Removed** | PRs removed from the merge queue and not currently re-queued |
 | **Queued** | PRs currently in the merge queue |
 
 ---
@@ -168,13 +169,17 @@ GraphQL strategy:
 2. **Phase 2 — parallel fetch**: fires all full-data page requests
    simultaneously using `tokio::task::JoinSet`, then reassembles them in order.
 
-Each PR is classified based on `mergeStateStatus` and `mergeQueueEntry`:
+Each PR's status is derived from `mergeStateStatus`, `mergeQueueEntry`, and
+`timelineItems` (merge queue removal events):
 
 | Status | Condition |
 |---|---|
-| **Ready to merge** | `mergeStateStatus = CLEAN`, not in queue, not a draft |
-| **Failed to merge** | In queue with state `UNMERGEABLE`, or `mergeStateStatus = BLOCKED` |
-| **In queue** | In queue with any other state, or is a draft |
+| **Ready to merge** | `mergeStateStatus = CLEAN` and not currently in the merge queue |
+| **In queue** | Has an active `mergeQueueEntry` (any state) |
+| **Removed** | Has a `REMOVED_FROM_MERGE_QUEUE_EVENT` in its timeline and is not currently re-queued |
+
+Draft PRs display their real merge state with a `draft` badge and are excluded
+from the **Ready** filter since they cannot be queued.
 
 ---
 

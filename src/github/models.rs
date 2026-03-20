@@ -194,6 +194,53 @@ pub struct FileDiff {
     pub patch: Option<String>,
 }
 
+/// Why a PR was removed from the merge queue.
+#[derive(Debug, Clone, PartialEq)]
+pub enum QueueRemovalReason {
+    /// Status checks failed — the most common retry case.
+    FailedChecks,
+    /// The branch has a merge conflict.
+    MergeConflict,
+    /// Rejected by a merge queue rule.
+    RejectedByRule,
+    /// Manually removed or queue cleared — not a failure.
+    Other,
+}
+
+impl From<&str> for QueueRemovalReason {
+    fn from(s: &str) -> Self {
+        match s {
+            "FAILED_CHECKS" => Self::FailedChecks,
+            "MERGE_CONFLICT" => Self::MergeConflict,
+            "REJECTED_BY_MERGE_QUEUE_RULE" => Self::RejectedByRule,
+            _ => Self::Other,
+        }
+    }
+}
+
+impl QueueRemovalReason {
+    pub fn label(&self) -> &str {
+        match self {
+            Self::FailedChecks => "failed status checks",
+            Self::MergeConflict => "merge conflict",
+            Self::RejectedByRule => "rejected by merge queue rule",
+            Self::Other => "removed",
+        }
+    }
+
+    /// Whether this reason should cause the PR to appear as FailedMerge.
+    pub fn is_failure(&self) -> bool {
+        !matches!(self, Self::Other)
+    }
+}
+
+/// The most recent removal of this PR from the merge queue, if within 24 hours.
+#[derive(Debug, Clone)]
+pub struct QueueRemoval {
+    pub at: chrono::DateTime<chrono::Utc>,
+    pub reason: QueueRemovalReason,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum PrStatus {
     ReadyToMerge,
@@ -214,20 +261,20 @@ pub struct PullRequest {
     pub review_decision: Option<ReviewDecision>,
     pub is_draft: bool,
     pub status: PrStatus,
+    /// Most recent removal from the merge queue within the past 24 hours, if any.
+    #[serde(skip)]
+    pub last_queue_removal: Option<QueueRemoval>,
 }
 
 impl PullRequest {
     pub fn compute_status(
         mergeable_state: &MergeableState,
         merge_queue: &Option<MergeQueueEntry>,
-        is_draft: bool,
+        _is_draft: bool,
+        last_queue_removal: &Option<QueueRemoval>,
     ) -> PrStatus {
-        // Drafts are never ready — exclude them the same way InQueue PRs are
-        if is_draft {
-            return PrStatus::InQueue;
-        }
-
         if let Some(entry) = merge_queue {
+            // PR is currently in the queue.
             match entry.state {
                 MergeQueueState::Unmergeable => PrStatus::FailedMerge,
                 MergeQueueState::Queued
@@ -236,6 +283,12 @@ impl PullRequest {
                 | MergeQueueState::Locked => PrStatus::InQueue,
             }
         } else {
+            // PR is not in the queue — check if it was recently ejected.
+            if let Some(removal) = last_queue_removal {
+                if removal.reason.is_failure() {
+                    return PrStatus::FailedMerge;
+                }
+            }
             match mergeable_state {
                 MergeableState::Clean => PrStatus::ReadyToMerge,
                 MergeableState::Blocked => PrStatus::FailedMerge,
