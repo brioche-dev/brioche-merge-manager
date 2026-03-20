@@ -283,6 +283,26 @@ impl App {
                 }
                 None
             }
+
+            Event::ScrollUp(col, row) => {
+                if self.show_diff {
+                    let r = &self.diff_panel_rect;
+                    if col >= r.x && col < r.x + r.width && row >= r.y && row < r.y + r.height {
+                        return Some(Action::DiffScrollUp(3));
+                    }
+                }
+                Some(Action::NavigateUp)
+            }
+
+            Event::ScrollDown(col, row) => {
+                if self.show_diff {
+                    let r = &self.diff_panel_rect;
+                    if col >= r.x && col < r.x + r.width && row >= r.y && row < r.y + r.height {
+                        return Some(Action::DiffScrollDown(3));
+                    }
+                }
+                Some(Action::NavigateDown)
+            }
             Event::Key(code, modifiers) => {
                 if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('c') {
                     return Some(Action::Quit);

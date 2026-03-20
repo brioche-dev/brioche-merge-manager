@@ -7,6 +7,9 @@ Shows all open PRs, highlights which are **ready to queue** or **removed from th
 queue or retry them in GitHub's native merge queue, and opens any PR in your
 browser — all without leaving the terminal.
 
+- **Bulk enqueue** — select multiple PRs with `Space` / `a` and add them all to the merge queue in a single batched GraphQL request
+- **Mouse support** — click filter tabs and the diff panel to navigate without the keyboard; scroll wheel navigates the PR list or scrolls the diff depending on cursor position
+
 ---
 
 ## Screenshot
@@ -33,7 +36,7 @@ browser — all without leaving the terminal.
 │  r  Add to queue    o  Open in browser  ││  +                        │
 ╰───────────────────────────────────────╯╰──────────────────────────────╯
   ↑↓ / jk  Navigate    Tab / ⇧Tab  Cycle filter    R  Refresh
-  r  Add to queue    o  Open in browser    d  Diff    Ctrl+C  Quit
+  Space  Select   a  Select all   A  Deselect all   r  Add to queue   o  Open   Enter  Toggle diff   Ctrl+C  Quit
 ```
 
 ---
@@ -121,18 +124,39 @@ cargo run
 | `Tab` | Cycle filter forward |
 | `Shift+Tab` | Cycle filter backward |
 
+**Bulk selection**
+
+| Key | Action |
+|---|---|
+| `Space` | Toggle the current PR in/out of the selection |
+| `a` | Select all PRs visible under the current filter |
+| `A` | Deselect all |
+| `r` | Add selected PRs to the merge queue (single batched request); if nothing is selected, enqueues the current PR |
+
+Selected PRs show a `✓` marker in the list. The spinner in the status bar reads *Adding N PRs to merge queue…* while the request is in flight.
+
 **Actions**
 
 | Key | Action |
 |---|---|
-| `r` | Add selected PR to merge queue (works for ready and removed PRs) |
+| `r` | Add to merge queue (see Bulk selection above) |
 | `o` | Open selected PR in browser |
 | `Enter` | Toggle diff panel |
 | `d` | Focus/unfocus diff panel for scrolling (when open) |
 | `R` | Refresh PR list |
 | `Ctrl+C` | Quit |
 
-**Diff panel** (press `d` to open and focus)
+**Mouse**
+
+| Action | Effect |
+|---|---|
+| Click a filter tab | Switch to that filter |
+| Click the diff panel | Focus the diff panel for keyboard scrolling |
+| Click the diff panel again | Unfocus (restore PR list navigation) |
+| Scroll wheel over the diff panel | Scroll the diff (3 lines per notch) |
+| Scroll wheel elsewhere | Move PR list selection up/down |
+
+**Diff panel** (`Enter` to open; `d` to focus for scrolling)
 
 | Key | Action |
 |---|---|
@@ -145,6 +169,8 @@ cargo run
 | `d` | Unfocus diff (restore PR list navigation) |
 | `Enter` | Close diff panel |
 
+`project.bri` files are always sorted to the top of the diff view.
+
 ### Filters
 
 The tab bar at the top of the PR list cycles through four views:
@@ -154,7 +180,7 @@ The tab bar at the top of the PR list cycles through four views:
 | **Active** | All open PRs (default) |
 | **Ready** | Non-draft PRs with a clean merge state, not yet queued |
 | **Removed** | PRs removed from the merge queue and not currently re-queued |
-| **Queued** | PRs currently in the merge queue |
+| **Queued** | PRs currently in the merge queue, sorted by position (longest-waiting first) |
 
 ---
 

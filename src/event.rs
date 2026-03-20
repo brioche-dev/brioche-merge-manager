@@ -8,6 +8,10 @@ pub enum Event {
     Key(KeyCode, KeyModifiers),
     /// Left mouse button click at (column, row).
     Mouse(u16, u16),
+    /// Scroll wheel up at (column, row).
+    ScrollUp(u16, u16),
+    /// Scroll wheel down at (column, row).
+    ScrollDown(u16, u16),
     Tick,
 }
 
@@ -31,10 +35,20 @@ pub fn spawn_event_task(tx: UnboundedSender<Event>) {
                     }
                 }
                 Ok(Some(CrosstermEvent::Mouse(mouse))) => {
-                    if mouse.kind == MouseEventKind::Down(MouseButton::Left)
-                        && tx.send(Event::Mouse(mouse.column, mouse.row)).is_err()
-                    {
-                        break;
+                    let evt = match mouse.kind {
+                        MouseEventKind::Down(MouseButton::Left) => {
+                            Some(Event::Mouse(mouse.column, mouse.row))
+                        }
+                        MouseEventKind::ScrollUp => Some(Event::ScrollUp(mouse.column, mouse.row)),
+                        MouseEventKind::ScrollDown => {
+                            Some(Event::ScrollDown(mouse.column, mouse.row))
+                        }
+                        _ => None,
+                    };
+                    if let Some(evt) = evt {
+                        if tx.send(evt).is_err() {
+                            break;
+                        }
                     }
                 }
                 Ok(None) => {
