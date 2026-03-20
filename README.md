@@ -14,30 +14,7 @@ browser — all without leaving the terminal.
 
 ## Screenshot
 
-```
- 🍞 Brioche Merge Manager   brioche-dev/brioche-packages  ·  312 PRs
-╭ Pull Requests ───────────────────────────────────────────────────────╮
-│ ▶ Active (312)   Ready (9)   Removed (3)   Queued (47)               │
-│                                                                       │
-│ ▶ ● #3712  ready  ✓  feat: add python package          @alice        │
-│   ● #3698  ready  ✓  chore: bump openssl                @bob         │
-│   ● #3685  removed ✗  fix: use correct cmake flags     @carol        │
-│   ● #3601  draft     wip: refactor build system        @dave  draft  │
-╰───────────────────────────────────────────────────────────────────────╯
-╭ ● PR #3712 ──────────────────────────╮╭ Diff  d to scroll ──────────╮
-│                                       ││                              │
-│   Title  │  feat: add python package  ││  3 files  +47  -12          │
-│   Author │  @alice                    ││  ──────────────────────      │
-│   Status │  ●  Ready to merge         ││                              │
-│   Checks │  ✓  success                ││  ~ src/packages/python.bri  │
-│   Review │  ✓  approved               ││  @@ -1,6 +1,8 @@            │
-│   URL    │  https://github.com/…      ││  -version = "3.11.0"        │
-│                                       ││  +version = "3.12.0"        │
-│  r  Add to queue    o  Open in browser  ││  +                        │
-╰───────────────────────────────────────╯╰──────────────────────────────╯
-  ↑↓ / jk  Navigate    Tab / ⇧Tab  Cycle filter    R  Refresh
-  Space  Select   a  Select all   A  Deselect all   r  Add to queue   o  Open   Enter  Toggle diff   Ctrl+C  Quit
-```
+![Brioche Merge Manager showing the PR list on the left with a selected PR's diff panel open on the right, and the bulk selection legend at the bottom](images/bmmscreenshot.png)
 
 ---
 
