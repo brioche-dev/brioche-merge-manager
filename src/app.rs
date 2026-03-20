@@ -118,7 +118,6 @@ pub enum Action {
 // App
 // ---------------------------------------------------------------------------
 
-#[allow(dead_code)]
 pub struct App {
     pub config: Config,
     pub github: Arc<GitHubClient>,
