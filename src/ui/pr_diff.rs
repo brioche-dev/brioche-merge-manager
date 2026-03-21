@@ -29,7 +29,7 @@ pub fn render_pr_diff(f: &mut Frame, app: &App, area: Rect) {
         Line::from(vec![
             Span::raw(" "),
             "Diff".cyan().bold(),
-            "  d to scroll".dim(),
+            "  d to focus".dim(),
             Span::raw(" "),
         ])
     };

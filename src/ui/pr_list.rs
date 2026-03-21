@@ -91,8 +91,9 @@ pub fn render_pr_list(f: &mut Frame, app: &mut App, area: Rect) {
 
     render_filter_tabs(f, app, inner[0]);
 
-    // Keep app in sync so PageUp/Down know how many rows are visible
+    // Keep app in sync so PageUp/Down know how many rows are visible, and clicks can be hit-tested.
     app.list_height = inner[1].height as usize;
+    app.pr_list_rect = inner[1];
 
     let visible = app.visible_prs();
 

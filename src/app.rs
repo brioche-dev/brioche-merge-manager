@@ -109,6 +109,7 @@ pub enum Action {
     NavigatePageDown,
     NavigateHome,
     NavigateEnd,
+    NavigateTo(usize),
     ToggleDiff,
     FocusDiff,
     UnfocusDiff,
@@ -155,6 +156,8 @@ pub struct App {
     pub filter_tab_rects: Vec<Rect>,
     /// Area of the diff panel. Updated each render frame; used for click-to-focus.
     pub diff_panel_rect: Rect,
+    /// Area of the PR list items (below filter tabs). Updated each render frame; used for click-to-select.
+    pub pr_list_rect: Rect,
     /// PR numbers toggled into the multi-select set.
     pub selected_prs: HashSet<u64>,
     /// True while a batch enqueue request is in flight.
@@ -189,6 +192,7 @@ impl App {
             diff_height: 10,
             filter_tab_rects: Vec::new(),
             diff_panel_rect: Rect::default(),
+            pr_list_rect: Rect::default(),
             selected_prs: HashSet::new(),
             enqueue_in_flight: false,
             enqueue_total: 0,
@@ -280,6 +284,13 @@ impl App {
                             return Some(Action::SetFilter(filter.clone()));
                         }
                     }
+                }
+                // Click on a PR list item selects it.
+                let r = &self.pr_list_rect;
+                if col >= r.x && col < r.x + r.width && row >= r.y && row < r.y + r.height {
+                    let offset = self.list_state.offset();
+                    let idx = (row - r.y) as usize + offset;
+                    return Some(Action::NavigateTo(idx));
                 }
                 None
             }
@@ -447,6 +458,20 @@ impl App {
                 if self.show_diff {
                     if let Some(pr) = self.selected_pr() {
                         self.fetch_diff_if_needed(pr.number, action_tx);
+                    }
+                }
+            }
+
+            Action::NavigateTo(idx) => {
+                let count = self.visible_prs().len();
+                if count > 0 {
+                    self.selected = idx.min(count - 1);
+                    self.list_state.select(Some(self.selected));
+                    self.diff_scroll = 0;
+                    if self.show_diff {
+                        if let Some(pr) = self.selected_pr() {
+                            self.fetch_diff_if_needed(pr.number, action_tx);
+                        }
                     }
                 }
             }
