@@ -84,7 +84,17 @@ GITHUB_REPO=brioche-packages
 cargo run
 # or after building:
 ./target/release/brioche-merge-manager
+
+# start with the diff panel open
+./target/release/brioche-merge-manager --diff
+cargo run -- --diff
 ```
+
+### Flags
+
+| Flag | Description |
+|---|---|
+| `--diff` | Open the diff panel on startup (equivalent to pressing `Enter` after the first PR loads) |
 
 ### Keybindings
 
@@ -133,7 +143,7 @@ Selected PRs show a `✓` marker in the list. The spinner in the status bar read
 | Scroll wheel over the diff panel | Scroll the diff (3 lines per notch) |
 | Scroll wheel elsewhere | Move PR list selection up/down |
 
-**Diff panel** (`Enter` to open; `d` to focus for scrolling)
+**Diff panel** (`Enter` to open; `d` to focus for scrolling; or pass `--diff` to open on startup)
 
 | Key | Action |
 |---|---|
