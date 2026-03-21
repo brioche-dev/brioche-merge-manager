@@ -1,5 +1,5 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::Rect,
     style::{Color, Style, Stylize},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, Gauge, List, ListItem, Paragraph},
@@ -79,21 +79,16 @@ pub fn render_pr_list(f: &mut Frame, app: &mut App, area: Rect) {
     //   [rest]    scrollable PR list
     f.render_widget(block, area);
 
-    let inner = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Min(0)])
-        .split(Rect {
-            x: area.x + 1,
-            y: area.y + 1,
-            width: area.width.saturating_sub(2),
-            height: area.height.saturating_sub(2),
-        });
-
-    render_filter_tabs(f, app, inner[0]);
+    let list_rect = Rect {
+        x: area.x + 1,
+        y: area.y + 1,
+        width: area.width.saturating_sub(2),
+        height: area.height.saturating_sub(2),
+    };
 
     // Keep app in sync so PageUp/Down know how many rows are visible, and clicks can be hit-tested.
-    app.list_height = inner[1].height as usize;
-    app.pr_list_rect = inner[1];
+    app.list_height = list_rect.height as usize;
+    app.pr_list_rect = list_rect;
 
     let visible = app.visible_prs();
 
@@ -103,7 +98,7 @@ pub fn render_pr_list(f: &mut Frame, app: &mut App, area: Rect) {
             Span::raw("  "),
             format!("No {label} PRs").dim(),
         ]));
-        f.render_widget(msg, inner[1]);
+        f.render_widget(msg, list_rect);
         return;
     }
 
@@ -161,10 +156,10 @@ pub fn render_pr_list(f: &mut Frame, app: &mut App, area: Rect) {
         .highlight_style(Style::new().black().on_cyan().bold())
         .highlight_symbol("▶ ");
 
-    f.render_stateful_widget(list, inner[1], &mut app.list_state);
+    f.render_stateful_widget(list, list_rect, &mut app.list_state);
 }
 
-fn render_filter_tabs(f: &mut Frame, app: &mut App, area: Rect) {
+pub fn render_filter_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     let mut spans = vec![Span::raw(" ")];
     let mut x = area.x + 1; // skip the leading space
 

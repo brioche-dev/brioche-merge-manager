@@ -169,7 +169,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(config: Config, github: Arc<GitHubClient>) -> Self {
+    pub fn new(config: Config, github: Arc<GitHubClient>, open_diff: bool) -> Self {
         let mut list_state = ListState::default();
         list_state.select(Some(0));
 
@@ -185,7 +185,7 @@ impl App {
             active_filter: Filter::Active,
             status_msg: None,
             should_quit: false,
-            show_diff: false,
+            show_diff: open_diff,
             diff_focused: false,
             diff_cache: std::collections::HashMap::new(),
             diff_scroll: 0,
@@ -733,6 +733,11 @@ impl App {
                 self.load_state = LoadState::Idle;
                 self.load_progress = None;
                 self.clamp_selection();
+                if self.show_diff {
+                    if let Some(pr) = self.selected_pr() {
+                        self.fetch_diff_if_needed(pr.number, action_tx);
+                    }
+                }
             }
 
             Action::LoadError(msg) => {

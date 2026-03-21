@@ -17,7 +17,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // header
+            Constraint::Length(2), // header + breathing room
             Constraint::Fill(1),   // main content
             Constraint::Length(3), // legend
         ])
@@ -26,12 +26,20 @@ pub fn render(f: &mut Frame, app: &mut App) {
     render_header(f, app, rows[0]);
     render_legend(f, app, rows[2]);
 
+    // Filter tabs always occupy a 1-line row above the panels so their
+    // position never shifts when the diff panel is toggled.
+    let main_rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Fill(1)])
+        .split(rows[1]);
+
+    pr_list::render_filter_tabs(f, app, main_rows[0]);
+
     if app.show_diff {
-        // Split the main content area horizontally: left = list+detail, right = diff.
         let cols = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Fill(2), Constraint::Fill(3)])
-            .split(rows[1]);
+            .split(main_rows[1]);
 
         let left = Layout::default()
             .direction(Direction::Vertical)
@@ -48,7 +56,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         let left = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Fill(2), Constraint::Fill(3)])
-            .split(rows[1]);
+            .split(main_rows[1]);
 
         pr_list::render_pr_list(f, app, left[0]);
         pr_detail::render_pr_detail(f, app, left[1]);

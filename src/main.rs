@@ -23,8 +23,10 @@ async fn main() -> Result<()> {
     let config = Config::from_env()?;
     debug!(owner = %config.owner, repo = %config.repo, "starting");
 
+    let open_diff = std::env::args().any(|a| a == "--diff");
+
     let github = Arc::new(GitHubClient::new(&config)?);
-    let app = App::new(config, github);
+    let app = App::new(config, github, open_diff);
 
     tui::run(app).await?;
 
