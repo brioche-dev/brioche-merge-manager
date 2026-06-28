@@ -1,9 +1,9 @@
 use ratatui::{
+    Frame,
     layout::Rect,
     style::{Color, Stylize},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph},
-    Frame,
 };
 
 use crate::{
@@ -89,14 +89,14 @@ pub fn render_pr_diff(f: &mut Frame, app: &App, area: Rect) {
 
             let visible_height = area.height.saturating_sub(2) as usize;
             let max_scroll = lines.len().saturating_sub(visible_height);
-            let scroll = app.diff_scroll.min(max_scroll) as u16;
+            let scroll = u16::try_from(app.diff_scroll.min(max_scroll)).unwrap_or(0);
 
             f.render_widget(Paragraph::new(lines).block(block).scroll((scroll, 0)), area);
         }
     }
 }
 
-fn file_lines<'a>(file: &'a FileDiff, width: u16) -> Vec<Line<'a>> {
+fn file_lines(file: &FileDiff, width: u16) -> Vec<Line<'_>> {
     let name_max = width.saturating_sub(16) as usize;
     let name = truncate_left(&file.filename, name_max);
 

@@ -2,7 +2,7 @@ use super::models::{FileDiff, FileStatus, PrStatus, PullRequest};
 use anyhow::Result;
 use tracing::debug;
 
-/// Sort all PRs: FailedMerge first, ReadyToMerge second, InQueue last,
+/// Sort all PRs: `FailedMerge` first, `ReadyToMerge` second, `InQueue` last,
 /// descending by number within each group.
 /// Filtering is handled by the UI layer via `App::visible_prs()`.
 pub fn build_pull_requests(mut prs: Vec<PullRequest>) -> Vec<PullRequest> {
@@ -35,7 +35,7 @@ pub fn build_pull_requests(mut prs: Vec<PullRequest>) -> Vec<PullRequest> {
 const GITHUB_REST_URL: &str = "https://api.github.com";
 
 /// Fetch the list of files changed in a PR via the REST API.
-/// Returns up to 100 files (GitHub's per_page max for this endpoint).
+/// Returns up to 100 files (GitHub's `per_page` max for this endpoint).
 pub async fn fetch_pr_files(
     token: &str,
     owner: &str,
@@ -67,9 +67,11 @@ pub async fn fetch_pr_files(
                 .map(|f| {
                     let filename = f["filename"].as_str().unwrap_or("").to_string();
                     let status = FileStatus::from(f["status"].as_str().unwrap_or(""));
-                    let additions = f["additions"].as_u64().unwrap_or(0) as u32;
-                    let deletions = f["deletions"].as_u64().unwrap_or(0) as u32;
-                    let patch = f["patch"].as_str().map(|s| s.to_string());
+                    let additions =
+                        u32::try_from(f["additions"].as_u64().unwrap_or(0)).unwrap_or(0);
+                    let deletions =
+                        u32::try_from(f["deletions"].as_u64().unwrap_or(0)).unwrap_or(0);
+                    let patch = f["patch"].as_str().map(ToString::to_string);
                     FileDiff {
                         filename,
                         status,

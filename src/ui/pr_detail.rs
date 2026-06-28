@@ -1,9 +1,9 @@
 use ratatui::{
+    Frame,
     layout::Rect,
     style::{Color, Style, Stylize},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph},
-    Frame,
 };
 
 use crate::{
@@ -81,10 +81,12 @@ pub fn render_pr_detail(f: &mut Frame, app: &App, area: Rect) {
     ];
 
     // Checks rollup
-    let (rollup_symbol, rollup_label, rollup_color) = match &pr.check_rollup {
-        Some(r) => (r.symbol(), r.label(), r.color()),
-        None => ("—", "no checks", Color::Reset),
-    };
+    let (rollup_symbol, rollup_label, rollup_color) = pr
+        .check_rollup
+        .as_ref()
+        .map_or(("—", "no checks", Color::Reset), |r| {
+            (r.symbol(), r.label(), r.color())
+        });
     let rollup_span: Span = if rollup_color == Color::Reset {
         format!("{rollup_symbol}  {rollup_label}").dim()
     } else {
@@ -147,8 +149,7 @@ pub fn render_pr_detail(f: &mut Frame, app: &App, area: Rect) {
     // Queue removal reason (shown when PR was recently ejected from the queue)
     if let Some(removal) = &pr.last_queue_removal {
         let removal_color = match removal.reason {
-            QueueRemovalReason::FailedChecks => Color::Red,
-            QueueRemovalReason::MergeConflict => Color::Red,
+            QueueRemovalReason::FailedChecks | QueueRemovalReason::MergeConflict => Color::Red,
             QueueRemovalReason::RejectedByRule => Color::Yellow,
             QueueRemovalReason::Other => Color::Reset,
         };
@@ -207,7 +208,10 @@ pub fn render_pr_detail(f: &mut Frame, app: &App, area: Rect) {
 
 /// Format a UTC timestamp as a human-readable relative time string.
 fn format_ago(at: chrono::DateTime<chrono::Utc>) -> String {
-    let secs = (chrono::Utc::now() - at).num_seconds().max(0) as u64;
+    let secs = (chrono::Utc::now() - at)
+        .num_seconds()
+        .max(0)
+        .cast_unsigned();
     if secs < 60 {
         format!("{secs}s ago")
     } else if secs < 3600 {

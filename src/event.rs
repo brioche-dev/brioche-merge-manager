@@ -45,10 +45,10 @@ pub fn spawn_event_task(tx: UnboundedSender<Event>) {
                         }
                         _ => None,
                     };
-                    if let Some(evt) = evt {
-                        if tx.send(evt).is_err() {
-                            break;
-                        }
+                    if let Some(evt) = evt
+                        && tx.send(evt).is_err()
+                    {
+                        break;
                     }
                 }
                 Ok(None) => {

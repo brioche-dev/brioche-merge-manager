@@ -3,11 +3,11 @@ mod pr_diff;
 mod pr_list;
 
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout},
     style::Stylize,
     text::{Line, Span},
     widgets::Paragraph,
-    Frame,
 };
 
 use crate::app::App;
