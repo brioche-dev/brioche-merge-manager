@@ -25,7 +25,7 @@ async fn main() -> Result<()> {
 
     let open_diff = std::env::args().any(|a| a == "--diff");
 
-    let github = Arc::new(GitHubClient::new(&config)?);
+    let github = Arc::new(GitHubClient::new(&config));
     let app = App::new(config, github, open_diff);
 
     tui::run(app).await?;
@@ -51,7 +51,7 @@ fn init_tracing() {
         .open(&path)
     {
         Ok(file) => {
-            use tracing_subscriber::{fmt, EnvFilter};
+            use tracing_subscriber::{EnvFilter, fmt};
             let filter =
                 EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug"));
             fmt()

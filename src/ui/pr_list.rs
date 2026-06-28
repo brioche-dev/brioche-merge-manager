@@ -1,9 +1,9 @@
 use ratatui::{
+    Frame,
     layout::Rect,
     style::{Color, Style, Stylize},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, Gauge, List, ListItem, Paragraph},
-    Frame,
 };
 
 use crate::{
@@ -35,10 +35,12 @@ pub fn render_pr_list(f: &mut Frame, app: &mut App, area: Rect) {
             };
             let (loaded, total) = app.load_progress.unwrap_or((0, 0));
             let ratio = if total > 0 {
-                (loaded as f64 / total as f64).min(1.0)
+                f64::from(u32::try_from(loaded).unwrap_or(0))
+                    / f64::from(u32::try_from(total).unwrap_or(1))
             } else {
                 0.0
             };
+            let ratio = ratio.min(1.0);
             let label = if total > 0 {
                 format!("  Loading… {loaded} / {total} PRs")
             } else {
@@ -111,10 +113,10 @@ pub fn render_pr_list(f: &mut Frame, app: &mut App, area: Rect) {
                 PrStatus::InQueue => (Color::Yellow, "queue "),
             };
 
-            let (rollup_sym, rollup_color, rollup_dim) = match &pr.check_rollup {
-                Some(r) => (r.symbol().to_owned(), r.color(), false),
-                None => ("—".to_owned(), Color::Reset, true),
-            };
+            let (rollup_sym, rollup_color, rollup_dim) = pr.check_rollup.as_ref().map_or_else(
+                || ("—".to_owned(), Color::Reset, true),
+                |r| (r.symbol().to_owned(), r.color(), false),
+            );
 
             let draft_marker = if pr.is_draft {
                 " draft".dim().italic()
@@ -171,9 +173,9 @@ pub fn render_filter_tabs(f: &mut Frame, app: &mut App, area: Rect) {
         let label = format!(" {} ({}) ", filter.label(), count);
         // ▶ is 1 terminal column; label is all ASCII so .len() == display width.
         let tab_width = if is_active {
-            1 + label.len() as u16
+            1 + u16::try_from(label.len()).unwrap_or(0)
         } else {
-            label.len() as u16
+            u16::try_from(label.len()).unwrap_or(0)
         };
 
         app.filter_tab_rects.push(Rect {

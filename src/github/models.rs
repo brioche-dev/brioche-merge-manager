@@ -1,6 +1,7 @@
+use ratatui::style::Color;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MergeableState {
     Clean,
     Dirty,
@@ -10,7 +11,7 @@ pub enum MergeableState {
     Unknown,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MergeQueueState {
     Queued,
     Awaiting,
@@ -22,7 +23,6 @@ pub enum MergeQueueState {
 impl From<&str> for MergeQueueState {
     fn from(s: &str) -> Self {
         match s {
-            "QUEUED" => Self::Queued,
             "AWAITING_CHECKS" => Self::Awaiting,
             "MERGEABLE" => Self::Mergeable,
             "UNMERGEABLE" => Self::Unmergeable,
@@ -41,7 +41,7 @@ pub struct MergeQueueEntry {
 
 /// Rolled-up result of all status checks on the head commit.
 /// Maps from GraphQL `statusCheckRollup.state`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CheckRollupState {
     Success,
     Failure,
@@ -62,7 +62,7 @@ impl CheckRollupState {
         }
     }
 
-    pub fn symbol(&self) -> &str {
+    pub const fn symbol(&self) -> &str {
         match self {
             Self::Success => "✓",
             Self::Failure | Self::Error => "✗",
@@ -71,8 +71,7 @@ impl CheckRollupState {
         }
     }
 
-    pub fn color(&self) -> ratatui::style::Color {
-        use ratatui::style::Color;
+    pub const fn color(&self) -> Color {
         match self {
             Self::Success => Color::Green,
             Self::Failure | Self::Error => Color::Red,
@@ -81,7 +80,7 @@ impl CheckRollupState {
         }
     }
 
-    pub fn label(&self) -> &str {
+    pub const fn label(&self) -> &str {
         match self {
             Self::Success => "success",
             Self::Failure => "failure",
@@ -94,7 +93,7 @@ impl CheckRollupState {
 
 /// Review decision from GitHub's branch protection rules.
 /// Maps from GraphQL `reviewDecision`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReviewDecision {
     Approved,
     ChangesRequested,
@@ -111,7 +110,7 @@ impl ReviewDecision {
         }
     }
 
-    pub fn symbol(&self) -> &str {
+    pub const fn symbol(&self) -> &str {
         match self {
             Self::Approved => "✓",
             Self::ChangesRequested => "✗",
@@ -119,8 +118,7 @@ impl ReviewDecision {
         }
     }
 
-    pub fn color(&self) -> ratatui::style::Color {
-        use ratatui::style::Color;
+    pub const fn color(&self) -> Color {
         match self {
             Self::Approved => Color::Green,
             Self::ChangesRequested => Color::Red,
@@ -128,7 +126,7 @@ impl ReviewDecision {
         }
     }
 
-    pub fn label(&self) -> &str {
+    pub const fn label(&self) -> &str {
         match self {
             Self::Approved => "approved",
             Self::ChangesRequested => "changes requested",
@@ -137,7 +135,7 @@ impl ReviewDecision {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileStatus {
     Added,
     Modified,
@@ -161,7 +159,7 @@ impl From<&str> for FileStatus {
 }
 
 impl FileStatus {
-    pub fn symbol(&self) -> &str {
+    pub const fn symbol(&self) -> &str {
         match self {
             Self::Added => "+",
             Self::Modified => "~",
@@ -172,8 +170,7 @@ impl FileStatus {
         }
     }
 
-    pub fn color(&self) -> ratatui::style::Color {
-        use ratatui::style::Color;
+    pub const fn color(&self) -> Color {
         match self {
             Self::Added => Color::Green,
             Self::Modified => Color::Yellow,
@@ -195,7 +192,7 @@ pub struct FileDiff {
 }
 
 /// Why a PR was removed from the merge queue.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum QueueRemovalReason {
     /// Status checks failed — the most common retry case.
     FailedChecks,
@@ -219,7 +216,7 @@ impl From<&str> for QueueRemovalReason {
 }
 
 impl QueueRemovalReason {
-    pub fn label(&self) -> &str {
+    pub const fn label(&self) -> &str {
         match self {
             Self::FailedChecks => "failed status checks",
             Self::MergeConflict => "merge conflict",
@@ -228,8 +225,8 @@ impl QueueRemovalReason {
         }
     }
 
-    /// Whether this reason should cause the PR to appear as FailedMerge.
-    pub fn is_failure(&self) -> bool {
+    /// Whether this reason should cause the PR to appear as `FailedMerge`.
+    pub const fn is_failure(&self) -> bool {
         !matches!(self, Self::Other)
     }
 }
@@ -241,7 +238,7 @@ pub struct QueueRemoval {
     pub reason: QueueRemovalReason,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PrStatus {
     ReadyToMerge,
     FailedMerge,
@@ -267,11 +264,11 @@ pub struct PullRequest {
 }
 
 impl PullRequest {
-    pub fn compute_status(
+    pub const fn compute_status(
         mergeable_state: &MergeableState,
-        merge_queue: &Option<MergeQueueEntry>,
+        merge_queue: Option<&MergeQueueEntry>,
         _is_draft: bool,
-        last_queue_removal: &Option<QueueRemoval>,
+        last_queue_removal: Option<&QueueRemoval>,
     ) -> PrStatus {
         if let Some(entry) = merge_queue {
             // PR is currently in the queue.
@@ -284,13 +281,12 @@ impl PullRequest {
             }
         } else {
             // PR is not in the queue — check if it was recently ejected.
-            if let Some(removal) = last_queue_removal {
-                if removal.reason.is_failure() {
-                    return PrStatus::FailedMerge;
-                }
+            if let Some(removal) = last_queue_removal
+                && removal.reason.is_failure()
+            {
+                return PrStatus::FailedMerge;
             }
             match mergeable_state {
-                MergeableState::Clean => PrStatus::ReadyToMerge,
                 MergeableState::Blocked => PrStatus::FailedMerge,
                 _ => PrStatus::ReadyToMerge,
             }

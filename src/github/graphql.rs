@@ -1,4 +1,6 @@
-use anyhow::{anyhow, Result};
+use std::fmt::Write as _;
+
+use anyhow::{Result, anyhow};
 use serde_json::json;
 use tokio::task::JoinSet;
 use tracing::{debug, trace};
@@ -190,7 +192,7 @@ async fn collect_page_cursors(
     owner: &str,
     repo: &str,
 ) -> Result<(Vec<Option<String>>, usize)> {
-    let query = r#"
+    let query = r"
         query GetCursors($owner: String!, $repo: String!, $cursor: String) {
           repository(owner: $owner, name: $repo) {
             pullRequests(first: 50, after: $cursor, states: [OPEN]) {
@@ -199,7 +201,7 @@ async fn collect_page_cursors(
             }
           }
         }
-    "#;
+    ";
 
     // First page always starts with no cursor.
     let mut start_cursors: Vec<Option<String>> = vec![None];
@@ -216,7 +218,7 @@ async fn collect_page_cursors(
         let pr_page = &response["data"]["repository"]["pullRequests"];
 
         if let Some(n) = pr_page["totalCount"].as_u64() {
-            total_count = n as usize;
+            total_count = usize::try_from(n).unwrap_or(0);
         }
 
         let has_next = pr_page["pageInfo"]["hasNextPage"]
@@ -228,8 +230,8 @@ async fn collect_page_cursors(
 
         let end_cursor = pr_page["pageInfo"]["endCursor"]
             .as_str()
-            .map(|s| s.to_string());
-        cursor = end_cursor.clone();
+            .map(ToString::to_string);
+        cursor.clone_from(&end_cursor);
         start_cursors.push(end_cursor);
     }
 
@@ -250,7 +252,7 @@ async fn fetch_pr_page(
     cursor: Option<&str>,
     page_idx: usize,
 ) -> Result<(usize, Vec<PullRequest>)> {
-    let query = r#"
+    let query = r"
         query GetPRPage($owner: String!, $repo: String!, $cursor: String) {
           repository(owner: $owner, name: $repo) {
             pullRequests(first: 50, after: $cursor, states: [OPEN]) {
@@ -280,7 +282,7 @@ async fn fetch_pr_page(
             }
           }
         }
-    "#;
+    ";
 
     let body = json!({
         "query": query,
@@ -303,9 +305,9 @@ async fn fetch_pr_page(
                 pr = pr.number,
                 draft = pr.is_draft,
                 merge_state = node["mergeStateStatus"].as_str().unwrap_or("null"),
-                rollup = pr.check_rollup.as_ref().map(|r| r.label()).unwrap_or("none"),
-                review = pr.review_decision.as_ref().map(|r| r.label()).unwrap_or("none"),
-                queue_removal = pr.last_queue_removal.as_ref().map(|r| r.reason.label()).unwrap_or("none"),
+                rollup = pr.check_rollup.as_ref().map_or("none", CheckRollupState::label),
+                review = pr.review_decision.as_ref().map_or("none", ReviewDecision::label),
+                queue_removal = pr.last_queue_removal.as_ref().map_or("none", |r| r.reason.label()),
                 status = ?pr.status,
                 "parsed PR",
             );
@@ -328,14 +330,14 @@ fn parse_pr_node(node: &serde_json::Value) -> PullRequest {
     let html_url = node["url"].as_str().unwrap_or("").to_string();
     let is_draft = node["isDraft"].as_bool().unwrap_or(false);
 
-    let mergeable_state = match node["mergeStateStatus"].as_str() {
-        Some(s) => merge_state_status_to_state(s),
-        None => match node["mergeable"].as_str().unwrap_or("UNKNOWN") {
+    let mergeable_state = node["mergeStateStatus"].as_str().map_or_else(
+        || match node["mergeable"].as_str().unwrap_or("UNKNOWN") {
             "MERGEABLE" => MergeableState::Clean,
             "CONFLICTING" => MergeableState::Dirty,
             _ => MergeableState::Unknown,
         },
-    };
+        merge_state_status_to_state,
+    );
 
     let merge_queue = parse_merge_queue_entry(&node["mergeQueueEntry"]);
     let last_queue_removal = parse_queue_removal(&node["timelineItems"]);
@@ -352,9 +354,9 @@ fn parse_pr_node(node: &serde_json::Value) -> PullRequest {
 
     let status = PullRequest::compute_status(
         &mergeable_state,
-        &merge_queue,
+        merge_queue.as_ref(),
         is_draft,
-        &last_queue_removal,
+        last_queue_removal.as_ref(),
     );
 
     PullRequest {
@@ -410,7 +412,7 @@ fn parse_merge_queue_entry(val: &serde_json::Value) -> Option<MergeQueueEntry> {
         return None;
     }
     let state = MergeQueueState::from(val["state"].as_str().unwrap_or("QUEUED"));
-    let position = val["position"].as_u64().unwrap_or(0) as u32;
+    let position = u32::try_from(val["position"].as_u64().unwrap_or(0)).unwrap_or(0);
     Some(MergeQueueEntry {
         id,
         state,
@@ -451,9 +453,10 @@ pub async fn enqueue_pull_requests_batch(
     // Build a mutation with one aliased field per target.
     let mut mutation = String::from("mutation BulkEnqueue {");
     for (i, (_, node_id)) in targets.iter().enumerate() {
-        mutation.push_str(&format!(
+        let _ = write!(
+            mutation,
             "\n  pr{i}: enqueuePullRequest(input: {{ pullRequestId: \"{node_id}\" }}) {{ mergeQueueEntry {{ id state position }} }}"
-        ));
+        );
     }
     mutation.push_str("\n}");
 
@@ -468,20 +471,23 @@ pub async fn enqueue_pull_requests_batch(
         let alias = format!("pr{i}");
         let entry_val = &data[&alias]["mergeQueueEntry"];
         let id = entry_val["id"].as_str().filter(|s| !s.is_empty());
-        let result = match id {
-            Some(id) => {
+        let result = id.map_or_else(
+            || {
+                Err(anyhow!(
+                    "no mergeQueueEntry returned for PR #{pr_number} — already queued or ineligible"
+                ))
+            },
+            |id| {
                 let state = MergeQueueState::from(entry_val["state"].as_str().unwrap_or("QUEUED"));
-                let position = entry_val["position"].as_u64().unwrap_or(0) as u32;
+                let position =
+                    u32::try_from(entry_val["position"].as_u64().unwrap_or(0)).unwrap_or(0);
                 Ok(MergeQueueEntry {
                     id: id.to_string(),
                     state,
                     position,
                 })
-            }
-            None => Err(anyhow!(
-                "no mergeQueueEntry returned for PR #{pr_number} — already queued or ineligible"
-            )),
-        };
+            },
+        );
         results.push((*pr_number, result));
     }
 
@@ -489,13 +495,13 @@ pub async fn enqueue_pull_requests_batch(
 }
 
 pub async fn enqueue_pull_request(token: &str, pull_request_id: &str) -> Result<MergeQueueEntry> {
-    let mutation = r#"
+    let mutation = r"
         mutation EnqueuePR($pullRequestId: ID!) {
           enqueuePullRequest(input: { pullRequestId: $pullRequestId }) {
             mergeQueueEntry { id state position }
           }
         }
-    "#;
+    ";
 
     let body = json!({
         "query": mutation,
@@ -513,7 +519,7 @@ pub async fn enqueue_pull_request(token: &str, pull_request_id: &str) -> Result<
         .to_string();
 
     let state = MergeQueueState::from(entry_val["state"].as_str().unwrap_or("QUEUED"));
-    let position = entry_val["position"].as_u64().unwrap_or(0) as u32;
+    let position = u32::try_from(entry_val["position"].as_u64().unwrap_or(0)).unwrap_or(0);
 
     Ok(MergeQueueEntry {
         id,
