@@ -14,12 +14,12 @@ pub struct GitHubClient {
 }
 
 impl GitHubClient {
-    pub fn new(config: &Config) -> Result<Self> {
-        Ok(Self {
+    pub fn new(config: &Config) -> Self {
+        Self {
             token: config.github_token.clone(),
             owner: config.owner.clone(),
             repo: config.repo.clone(),
-        })
+        }
     }
 
     pub async fn fetch_managed_prs(

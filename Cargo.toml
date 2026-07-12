@@ -1,7 +1,15 @@
 [package]
 name = "brioche-merge-manager"
 version = "0.5.1"
-edition = "2021"
+edition = "2024"
+rust-version = "1.97"     # To align with the rust-toolchain.toml
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+struct_excessive_bools = "allow"
+too_many_lines = "allow"
 
 [dependencies]
 anyhow = "1.0.102"
@@ -19,3 +27,11 @@ tokio = { version = "1.52.3", features = ["full"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 webbrowser = "1.2.1"
+
+[profile.dev]
+split-debuginfo = "unpacked"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = "debuginfo"

@@ -9,16 +9,16 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::config::Config;
 use crate::event::Event;
-use crate::github::models::{FileDiff, MergeQueueEntry, PrStatus, PullRequest};
 use crate::github::GitHubClient;
+use crate::github::models::{FileDiff, MergeQueueEntry, PrStatus, PullRequest};
 
 // ---------------------------------------------------------------------------
 // Filter
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Filter {
-    /// ReadyToMerge + removed-from-queue (excludes InQueue / drafts)
+    /// `ReadyToMerge` + removed-from-queue (excludes `InQueue` / drafts)
     Active,
     Ready,
     Removed,
@@ -26,14 +26,9 @@ pub enum Filter {
 }
 
 impl Filter {
-    pub const ALL: &'static [Filter] = &[
-        Filter::Active,
-        Filter::Ready,
-        Filter::Removed,
-        Filter::Queued,
-    ];
+    pub const ALL: &'static [Self] = &[Self::Active, Self::Ready, Self::Removed, Self::Queued];
 
-    pub fn label(&self) -> &str {
+    pub const fn label(&self) -> &str {
         match self {
             Self::Active => "Active",
             Self::Ready => "Ready",
@@ -51,7 +46,7 @@ impl Filter {
         }
     }
 
-    pub fn next(&self) -> Self {
+    pub const fn next(&self) -> Self {
         match self {
             Self::Active => Self::Ready,
             Self::Ready => Self::Removed,
@@ -60,7 +55,7 @@ impl Filter {
         }
     }
 
-    pub fn prev(&self) -> Self {
+    pub const fn prev(&self) -> Self {
         match self {
             Self::Active => Self::Queued,
             Self::Ready => Self::Active,
@@ -152,7 +147,7 @@ pub struct App {
     pub diff_scroll: usize,
     /// Height of the visible diff area in rows (updated each render frame).
     pub diff_height: usize,
-    /// Clickable rects for each filter tab (parallel to Filter::ALL). Updated each render frame.
+    /// Clickable rects for each filter tab (parallel to `Filter::ALL`). Updated each render frame.
     pub filter_tab_rects: Vec<Rect>,
     /// Area of the diff panel. Updated each render frame; used for click-to-focus.
     pub diff_panel_rect: Rect,
@@ -210,12 +205,7 @@ impl App {
             .filter(|pr| self.active_filter.matches(pr))
             .collect();
         if self.active_filter == Filter::Queued {
-            prs.sort_by_key(|pr| {
-                pr.merge_queue
-                    .as_ref()
-                    .map(|e| e.position)
-                    .unwrap_or(u32::MAX)
-            });
+            prs.sort_by_key(|pr| pr.merge_queue.as_ref().map_or(u32::MAX, |e| e.position));
         }
         prs
     }
@@ -259,10 +249,10 @@ impl App {
         }
     }
 
-    pub fn handle_event(&self, event: Event) -> Option<Action> {
+    pub fn handle_event(&self, event: &Event) -> Option<Action> {
         match event {
             Event::Tick => Some(Action::Tick),
-            Event::Mouse(col, row) => {
+            &Event::Mouse(col, row) => {
                 // Click on the diff panel focuses it (or unfocuses if already focused).
                 if self.show_diff {
                     let r = &self.diff_panel_rect;
@@ -279,10 +269,9 @@ impl App {
                         && col < rect.x + rect.width
                         && row >= rect.y
                         && row < rect.y + rect.height
+                        && let Some(filter) = Filter::ALL.get(i)
                     {
-                        if let Some(filter) = Filter::ALL.get(i) {
-                            return Some(Action::SetFilter(filter.clone()));
-                        }
+                        return Some(Action::SetFilter(filter.clone()));
                     }
                 }
                 // Click on a PR list item selects it.
@@ -295,7 +284,7 @@ impl App {
                 None
             }
 
-            Event::ScrollUp(col, row) => {
+            &Event::ScrollUp(col, row) => {
                 if self.show_diff {
                     let r = &self.diff_panel_rect;
                     if col >= r.x && col < r.x + r.width && row >= r.y && row < r.y + r.height {
@@ -305,7 +294,7 @@ impl App {
                 Some(Action::NavigateUp)
             }
 
-            Event::ScrollDown(col, row) => {
+            &Event::ScrollDown(col, row) => {
                 if self.show_diff {
                     let r = &self.diff_panel_rect;
                     if col >= r.x && col < r.x + r.width && row >= r.y && row < r.y + r.height {
@@ -314,7 +303,7 @@ impl App {
                 }
                 Some(Action::NavigateDown)
             }
-            Event::Key(code, modifiers) => {
+            &Event::Key(code, modifiers) => {
                 if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('c') {
                     return Some(Action::Quit);
                 }
@@ -367,18 +356,14 @@ impl App {
         }
     }
 
-    pub async fn update(
-        &mut self,
-        action: Action,
-        action_tx: &UnboundedSender<Action>,
-    ) -> Result<()> {
+    pub fn update(&mut self, action: Action, action_tx: &UnboundedSender<Action>) {
         match action {
             Action::Tick => {
                 self.tick_count = self.tick_count.wrapping_add(1);
-                if let Some((_, ts)) = &self.status_msg {
-                    if ts.elapsed().as_secs() >= 3 {
-                        self.status_msg = None;
-                    }
+                if let Some((_, ts)) = &self.status_msg
+                    && ts.elapsed().as_secs() >= 3
+                {
+                    self.status_msg = None;
                 }
             }
 
@@ -414,10 +399,10 @@ impl App {
                     self.list_state.select(Some(self.selected));
                     self.diff_scroll = 0;
                 }
-                if self.show_diff {
-                    if let Some(pr) = self.selected_pr() {
-                        self.fetch_diff_if_needed(pr.number, action_tx);
-                    }
+                if self.show_diff
+                    && let Some(pr) = self.selected_pr()
+                {
+                    self.fetch_diff_if_needed(pr.number, action_tx);
                 }
             }
 
@@ -428,10 +413,10 @@ impl App {
                     self.list_state.select(Some(self.selected));
                     self.diff_scroll = 0;
                 }
-                if self.show_diff {
-                    if let Some(pr) = self.selected_pr() {
-                        self.fetch_diff_if_needed(pr.number, action_tx);
-                    }
+                if self.show_diff
+                    && let Some(pr) = self.selected_pr()
+                {
+                    self.fetch_diff_if_needed(pr.number, action_tx);
                 }
             }
 
@@ -440,10 +425,10 @@ impl App {
                 self.selected = self.selected.saturating_sub(page);
                 self.list_state.select(Some(self.selected));
                 self.diff_scroll = 0;
-                if self.show_diff {
-                    if let Some(pr) = self.selected_pr() {
-                        self.fetch_diff_if_needed(pr.number, action_tx);
-                    }
+                if self.show_diff
+                    && let Some(pr) = self.selected_pr()
+                {
+                    self.fetch_diff_if_needed(pr.number, action_tx);
                 }
             }
 
@@ -455,10 +440,10 @@ impl App {
                     self.list_state.select(Some(self.selected));
                     self.diff_scroll = 0;
                 }
-                if self.show_diff {
-                    if let Some(pr) = self.selected_pr() {
-                        self.fetch_diff_if_needed(pr.number, action_tx);
-                    }
+                if self.show_diff
+                    && let Some(pr) = self.selected_pr()
+                {
+                    self.fetch_diff_if_needed(pr.number, action_tx);
                 }
             }
 
@@ -468,10 +453,10 @@ impl App {
                     self.selected = idx.min(count - 1);
                     self.list_state.select(Some(self.selected));
                     self.diff_scroll = 0;
-                    if self.show_diff {
-                        if let Some(pr) = self.selected_pr() {
-                            self.fetch_diff_if_needed(pr.number, action_tx);
-                        }
+                    if self.show_diff
+                        && let Some(pr) = self.selected_pr()
+                    {
+                        self.fetch_diff_if_needed(pr.number, action_tx);
                     }
                 }
             }
@@ -480,10 +465,10 @@ impl App {
                 self.selected = 0;
                 self.list_state.select(Some(0));
                 self.diff_scroll = 0;
-                if self.show_diff {
-                    if let Some(pr) = self.selected_pr() {
-                        self.fetch_diff_if_needed(pr.number, action_tx);
-                    }
+                if self.show_diff
+                    && let Some(pr) = self.selected_pr()
+                {
+                    self.fetch_diff_if_needed(pr.number, action_tx);
                 }
             }
 
@@ -494,10 +479,10 @@ impl App {
                     self.list_state.select(Some(self.selected));
                     self.diff_scroll = 0;
                 }
-                if self.show_diff {
-                    if let Some(pr) = self.selected_pr() {
-                        self.fetch_diff_if_needed(pr.number, action_tx);
-                    }
+                if self.show_diff
+                    && let Some(pr) = self.selected_pr()
+                {
+                    self.fetch_diff_if_needed(pr.number, action_tx);
                 }
             }
 
@@ -543,7 +528,7 @@ impl App {
 
             Action::EnqueueSelected => {
                 if self.enqueue_in_flight {
-                    return Ok(());
+                    return;
                 }
                 if !self.selected_prs.is_empty() {
                     // Batch path: enqueue all selected PRs not already in the queue.
@@ -608,9 +593,9 @@ impl App {
                                 pr.merge_queue = Some(entry);
                                 pr.status = PullRequest::compute_status(
                                     &pr.mergeable_state,
-                                    &pr.merge_queue,
+                                    pr.merge_queue.as_ref(),
                                     pr.is_draft,
-                                    &pr.last_queue_removal,
+                                    pr.last_queue_removal.as_ref(),
                                 );
                             }
                         }
@@ -646,9 +631,9 @@ impl App {
                     pr.merge_queue = Some(entry);
                     pr.status = PullRequest::compute_status(
                         &pr.mergeable_state,
-                        &pr.merge_queue,
+                        pr.merge_queue.as_ref(),
                         pr.is_draft,
-                        &pr.last_queue_removal,
+                        pr.last_queue_removal.as_ref(),
                     );
                 }
                 self.clamp_selection();
@@ -665,7 +650,7 @@ impl App {
                     let tx = action_tx.clone();
                     tokio::spawn(async move {
                         match open_url(&url) {
-                            Ok(_) => {
+                            Ok(()) => {
                                 let _ = tx.send(Action::StatusMessage(format!(
                                     "Opened PR #{pr_number} in browser"
                                 )));
@@ -733,10 +718,10 @@ impl App {
                 self.load_state = LoadState::Idle;
                 self.load_progress = None;
                 self.clamp_selection();
-                if self.show_diff {
-                    if let Some(pr) = self.selected_pr() {
-                        self.fetch_diff_if_needed(pr.number, action_tx);
-                    }
+                if self.show_diff
+                    && let Some(pr) = self.selected_pr()
+                {
+                    self.fetch_diff_if_needed(pr.number, action_tx);
                 }
             }
 
@@ -749,8 +734,6 @@ impl App {
                 self.status_msg = Some((msg, Instant::now()));
             }
         }
-
-        Ok(())
     }
 }
 
