@@ -36,7 +36,7 @@ pub fn render_pr_detail(f: &mut Frame, app: &App, area: Rect) {
     };
 
     let draft_badge = if pr.is_draft {
-        "  draft".dim().italic()
+        " draft".dim().italic()
     } else {
         Span::raw("")
     };

@@ -119,7 +119,7 @@ pub fn render_pr_list(f: &mut Frame, app: &mut App, area: Rect) {
             );
 
             let draft_marker = if pr.is_draft {
-                " draft".dim().italic()
+                "draft ".dim().italic()
             } else {
                 Span::raw("")
             };
