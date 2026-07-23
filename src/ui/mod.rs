@@ -43,7 +43,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
         let left = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Fill(2), Constraint::Fill(3)])
+            .constraints([Constraint::Fill(2), Constraint::Fill(1)])
             .split(cols[0]);
 
         app.diff_height = cols[1].height.saturating_sub(2) as usize;
@@ -55,7 +55,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
     } else {
         let left = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Fill(2), Constraint::Fill(3)])
+            .constraints([Constraint::Fill(2), Constraint::Fill(1)])
             .split(main_rows[1]);
 
         pr_list::render_pr_list(f, app, left[0]);
