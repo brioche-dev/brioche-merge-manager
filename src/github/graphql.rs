@@ -11,6 +11,7 @@ use super::models::{
     CheckRollupState, MergeQueueEntry, MergeQueueState, MergeableState, PullRequest, QueueRemoval,
     QueueRemovalReason, ReviewDecision,
 };
+use std::convert::TryFrom;
 
 const GRAPHQL_URL: &str = "https://api.github.com/graphql";
 
@@ -331,12 +332,16 @@ fn parse_pr_node(node: &serde_json::Value) -> PullRequest {
     let is_draft = node["isDraft"].as_bool().unwrap_or(false);
 
     let mergeable_state = node["mergeStateStatus"].as_str().map_or_else(
-        || match node["mergeable"].as_str().unwrap_or("UNKNOWN") {
-            "MERGEABLE" => MergeableState::Clean,
-            "CONFLICTING" => MergeableState::Dirty,
-            _ => MergeableState::Unknown,
+        || {
+            node["mergeable"]
+                .as_str()
+                .map_or(MergeableState::Unknown, |s| match s {
+                    "MERGEABLE" => MergeableState::Clean,
+                    "CONFLICTING" => MergeableState::Dirty,
+                    _ => MergeableState::Unknown,
+                })
         },
-        merge_state_status_to_state,
+        MergeableState::from,
     );
 
     let merge_queue = parse_merge_queue_entry(&node["mergeQueueEntry"]);
@@ -346,11 +351,11 @@ fn parse_pr_node(node: &serde_json::Value) -> PullRequest {
         .as_array()
         .and_then(|ns| ns.first())
         .and_then(|n| n["commit"]["statusCheckRollup"]["state"].as_str())
-        .map(CheckRollupState::from_graphql);
+        .map(CheckRollupState::from);
 
     let review_decision = node["reviewDecision"]
         .as_str()
-        .and_then(ReviewDecision::from_graphql);
+        .and_then(|s| ReviewDecision::try_from(s).ok());
 
     let status = PullRequest::compute_status(
         &mergeable_state,
@@ -390,17 +395,6 @@ fn parse_queue_removal(timeline: &serde_json::Value) -> Option<QueueRemoval> {
         at: created_at,
         reason,
     })
-}
-
-fn merge_state_status_to_state(s: &str) -> MergeableState {
-    match s {
-        "CLEAN" => MergeableState::Clean,
-        "DIRTY" => MergeableState::Dirty,
-        "BLOCKED" => MergeableState::Blocked,
-        "BEHIND" => MergeableState::Behind,
-        "UNSTABLE" => MergeableState::Unstable,
-        _ => MergeableState::Unknown,
-    }
 }
 
 fn parse_merge_queue_entry(val: &serde_json::Value) -> Option<MergeQueueEntry> {
