@@ -226,9 +226,9 @@ pub enum QueueRemovalReason {
 impl From<&str> for QueueRemovalReason {
     fn from(s: &str) -> Self {
         match s {
-            "FAILED_CHECKS" => Self::FailedChecks,
-            "MERGE_CONFLICT" => Self::MergeConflict,
-            "REJECTED_BY_MERGE_QUEUE_RULE" => Self::RejectedByRule,
+            "failed_checks" => Self::FailedChecks,
+            "merge_conflict" => Self::MergeConflict,
+            "rejected_by_merge_queue_rule" => Self::RejectedByRule,
             _ => Self::Other,
         }
     }
@@ -255,6 +255,8 @@ impl QueueRemovalReason {
 pub struct QueueRemoval {
     pub at: chrono::DateTime<chrono::Utc>,
     pub reason: QueueRemovalReason,
+    /// URL to the latest workflow run associated with this removal, if available.
+    pub workflow_run_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

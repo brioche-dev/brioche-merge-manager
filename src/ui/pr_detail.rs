@@ -154,6 +154,7 @@ pub fn render_pr_detail(f: &mut Frame, app: &App, area: Rect) {
             QueueRemovalReason::Other => Color::Reset,
         };
         let ago = format_ago(removal.at);
+
         lines.push(Line::from(vec![
             Span::styled("  Removed ", label_style),
             Span::styled("│", sep_style),
@@ -162,6 +163,18 @@ pub fn render_pr_detail(f: &mut Frame, app: &App, area: Rect) {
             removal.reason.label().fg(removal_color),
             format!("  {ago}").dim(),
         ]));
+
+        if let Some(ref url) = removal.workflow_run_url {
+            // Truncate URL if needed
+            let url_max = url_max_width(area);
+            let url_display = truncate_url(url, url_max);
+            lines.push(Line::from(vec![
+                Span::styled("  Run     ", label_style),
+                Span::styled("│", sep_style),
+                Span::raw("  "),
+                url_display.dim(),
+            ]));
+        }
     }
 
     // Separator before actions

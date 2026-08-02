@@ -271,11 +271,18 @@ async fn fetch_pr_page(
                 commits(last: 1) {
                   nodes { commit { statusCheckRollup { state } } }
                 }
-                timelineItems(last: 5, itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT]) {
+                timelineItems(last: 1, itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT]) {
                   nodes {
                     ... on RemovedFromMergeQueueEvent {
                       createdAt
                       reason
+                      beforeCommit {
+                        checkSuites(last: 1) {
+                          nodes {
+                            workflowRun { url }
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -391,9 +398,20 @@ fn parse_queue_removal(timeline: &serde_json::Value) -> Option<QueueRemoval> {
         .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
         .map(|dt| dt.with_timezone(&Utc))?;
     let reason = QueueRemovalReason::from(event["reason"].as_str().unwrap_or(""));
+    let workflow_run_url = if reason == QueueRemovalReason::FailedChecks {
+        event["beforeCommit"]["checkSuites"]["nodes"]
+            .as_array()
+            .and_then(|nodes| nodes.first())
+            .and_then(|node| node["workflowRun"]["url"].as_str())
+            .map(str::to_owned)
+    } else {
+        None
+    };
+
     Some(QueueRemoval {
         at: created_at,
         reason,
+        workflow_run_url,
     })
 }
 
