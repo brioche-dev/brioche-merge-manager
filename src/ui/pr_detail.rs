@@ -11,6 +11,10 @@ use crate::{
     github::models::{MergeQueueState, PrStatus, QueueRemovalReason},
 };
 
+const DETAIL_BORDER_WIDTH: u16 = 2;
+// Width of the URL and Run field prefix: "  XXX     │  "
+const URL_PREFIX_WIDTH: u16 = 13;
+
 pub fn render_pr_detail(f: &mut Frame, app: &App, area: Rect) {
     let Some(pr) = app.selected_pr() else {
         let block = Block::default()
@@ -133,12 +137,8 @@ pub fn render_pr_detail(f: &mut Frame, app: &App, area: Rect) {
     }
 
     // URL (truncated to fit)
-    let url_max = area.width.saturating_sub(14) as usize;
-    let url_display = if pr.html_url.len() > url_max {
-        format!("{}…", &pr.html_url[..url_max.saturating_sub(1)])
-    } else {
-        pr.html_url.clone()
-    };
+    let url_max = url_max_width(area);
+    let url_display = truncate_url(&pr.html_url, url_max);
     lines.push(Line::from(vec![
         Span::styled("  URL     ", label_style),
         Span::styled("│", sep_style),
@@ -204,6 +204,21 @@ pub fn render_pr_detail(f: &mut Frame, app: &App, area: Rect) {
     }
 
     f.render_widget(Paragraph::new(lines).block(block), area);
+}
+
+const fn url_max_width(area: Rect) -> usize {
+    area.width
+        .saturating_sub(DETAIL_BORDER_WIDTH)
+        .saturating_sub(URL_PREFIX_WIDTH) as usize
+}
+
+/// Truncate a URL to fit within the given max width, adding ellipsis if needed.
+fn truncate_url(url: &str, max_width: usize) -> String {
+    if url.len() > max_width {
+        format!("{}…", &url[..max_width.saturating_sub(1)])
+    } else {
+        url.to_string()
+    }
 }
 
 /// Format a UTC timestamp as a human-readable relative time string.
