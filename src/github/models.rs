@@ -11,6 +11,19 @@ pub enum MergeableState {
     Unknown,
 }
 
+impl From<&str> for MergeableState {
+    fn from(s: &str) -> Self {
+        match s {
+            "CLEAN" => Self::Clean,
+            "DIRTY" => Self::Dirty,
+            "BLOCKED" => Self::Blocked,
+            "BEHIND" => Self::Behind,
+            "UNSTABLE" => Self::Unstable,
+            _ => Self::Unknown,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MergeQueueState {
     Queued,
@@ -51,8 +64,8 @@ pub enum CheckRollupState {
     Expected,
 }
 
-impl CheckRollupState {
-    pub fn from_graphql(s: &str) -> Self {
+impl From<&str> for CheckRollupState {
+    fn from(s: &str) -> Self {
         match s {
             "SUCCESS" => Self::Success,
             "FAILURE" => Self::Failure,
@@ -61,7 +74,9 @@ impl CheckRollupState {
             _ => Self::Expected,
         }
     }
+}
 
+impl CheckRollupState {
     pub const fn symbol(&self) -> &str {
         match self {
             Self::Success => "✓",
@@ -100,16 +115,20 @@ pub enum ReviewDecision {
     ReviewRequired,
 }
 
-impl ReviewDecision {
-    pub fn from_graphql(s: &str) -> Option<Self> {
+impl TryFrom<&str> for ReviewDecision {
+    type Error = ();
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
         match s {
-            "APPROVED" => Some(Self::Approved),
-            "CHANGES_REQUESTED" => Some(Self::ChangesRequested),
-            "REVIEW_REQUIRED" => Some(Self::ReviewRequired),
-            _ => None,
+            "APPROVED" => Ok(Self::Approved),
+            "CHANGES_REQUESTED" => Ok(Self::ChangesRequested),
+            "REVIEW_REQUIRED" => Ok(Self::ReviewRequired),
+            _ => Err(()),
         }
     }
+}
 
+impl ReviewDecision {
     pub const fn symbol(&self) -> &str {
         match self {
             Self::Approved => "✓",
@@ -207,9 +226,9 @@ pub enum QueueRemovalReason {
 impl From<&str> for QueueRemovalReason {
     fn from(s: &str) -> Self {
         match s {
-            "FAILED_CHECKS" => Self::FailedChecks,
-            "MERGE_CONFLICT" => Self::MergeConflict,
-            "REJECTED_BY_MERGE_QUEUE_RULE" => Self::RejectedByRule,
+            "failed_checks" => Self::FailedChecks,
+            "merge_conflict" => Self::MergeConflict,
+            "rejected_by_merge_queue_rule" => Self::RejectedByRule,
             _ => Self::Other,
         }
     }
@@ -236,6 +255,8 @@ impl QueueRemovalReason {
 pub struct QueueRemoval {
     pub at: chrono::DateTime<chrono::Utc>,
     pub reason: QueueRemovalReason,
+    /// URL to the latest workflow run associated with this removal, if available.
+    pub workflow_run_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

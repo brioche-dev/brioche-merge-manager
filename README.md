@@ -169,6 +169,8 @@ The tab bar at the top of the PR list cycles through four views:
 | **Removed** | PRs removed from the merge queue and not currently re-queued |
 | **Queued** | PRs currently in the merge queue, sorted by position (longest-waiting first) |
 
+When a PR is shown as **Removed** due to failed status checks, the detail panel displays the latest workflow run URL for quick access to the CI logs.
+
 ---
 
 ## How It Works
