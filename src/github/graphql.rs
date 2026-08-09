@@ -30,6 +30,24 @@ async fn graphql_post(
     token: &str,
     body: &serde_json::Value,
 ) -> Result<serde_json::Value> {
+    graphql_post_inner(client, token, body, false).await
+}
+
+/// Retains data returned alongside alias-specific errors for batch enqueue.
+async fn graphql_post_allow_partial(
+    client: &reqwest::Client,
+    token: &str,
+    body: &serde_json::Value,
+) -> Result<serde_json::Value> {
+    graphql_post_inner(client, token, body, true).await
+}
+
+async fn graphql_post_inner(
+    client: &reqwest::Client,
+    token: &str,
+    body: &serde_json::Value,
+    allow_partial: bool,
+) -> Result<serde_json::Value> {
     let mut attempt = 0u32;
 
     loop {
@@ -110,9 +128,12 @@ async fn graphql_post(
         })?;
 
         if let Some(errors) = val.get("errors") {
-            let msg = format_graphql_errors(errors);
-            debug!(%errors, "graphql_post: GraphQL errors");
-            return Err(anyhow!("GitHub GraphQL error: {msg}"));
+            if !allow_partial {
+                let msg = format_graphql_errors(errors);
+                debug!(%errors, "graphql_post: GraphQL errors");
+                return Err(anyhow!("GitHub GraphQL error: {msg}"));
+            }
+            debug!(%errors, "graphql_post: retaining partial response");
         }
 
         return Ok(val);
@@ -260,6 +281,7 @@ async fn fetch_pr_page(
               nodes {
                 number
                 id
+                headRefOid
                 title
                 url
                 author { login }
@@ -333,6 +355,7 @@ async fn fetch_pr_page(
 fn parse_pr_node(node: &serde_json::Value) -> PullRequest {
     let number = node["number"].as_u64().unwrap_or(0);
     let node_id = node["id"].as_str().unwrap_or("").to_string();
+    let head_oid = node["headRefOid"].as_str().unwrap_or("").to_string();
     let title = node["title"].as_str().unwrap_or("").to_string();
     let author = node["author"]["login"].as_str().unwrap_or("").to_string();
     let html_url = node["url"].as_str().unwrap_or("").to_string();
@@ -374,6 +397,7 @@ fn parse_pr_node(node: &serde_json::Value) -> PullRequest {
     PullRequest {
         number,
         node_id,
+        head_oid,
         title,
         author,
         html_url,
@@ -456,7 +480,7 @@ fn format_graphql_errors(errors: &serde_json::Value) -> String {
 /// Returns a vec of `(pr_number, Result<MergeQueueEntry>)` — one entry per input.
 pub async fn enqueue_pull_requests_batch(
     token: &str,
-    targets: &[(u64, String)], // (pr_number, node_id)
+    targets: &[(u64, String, String)], // (pr_number, node_id, head_oid)
 ) -> Result<Vec<(u64, Result<MergeQueueEntry>)>> {
     if targets.is_empty() {
         return Ok(Vec::new());
@@ -464,10 +488,10 @@ pub async fn enqueue_pull_requests_batch(
 
     // Build a mutation with one aliased field per target.
     let mut mutation = String::from("mutation BulkEnqueue {");
-    for (i, (_, node_id)) in targets.iter().enumerate() {
+    for (i, (_, node_id, head_oid)) in targets.iter().enumerate() {
         let _ = write!(
             mutation,
-            "\n  pr{i}: enqueuePullRequest(input: {{ pullRequestId: \"{node_id}\" }}) {{ mergeQueueEntry {{ id state position }} }}"
+            "\n  pr{i}: enqueuePullRequest(input: {{ pullRequestId: \"{node_id}\", expectedHeadOid: \"{head_oid}\" }}) {{ mergeQueueEntry {{ id state position }} }}"
         );
     }
     mutation.push_str("\n}");
@@ -475,41 +499,87 @@ pub async fn enqueue_pull_requests_batch(
     let body = json!({ "query": mutation });
 
     let client = reqwest::Client::new();
-    let response = graphql_post(&client, token, &body).await?;
-    let data = &response["data"];
-
-    let mut results = Vec::with_capacity(targets.len());
-    for (i, (pr_number, _)) in targets.iter().enumerate() {
-        let alias = format!("pr{i}");
-        let entry_val = &data[&alias]["mergeQueueEntry"];
-        let id = entry_val["id"].as_str().filter(|s| !s.is_empty());
-        let result = id.map_or_else(
-            || {
-                Err(anyhow!(
-                    "no mergeQueueEntry returned for PR #{pr_number} — already queued or ineligible"
-                ))
-            },
-            |id| {
-                let state = MergeQueueState::from(entry_val["state"].as_str().unwrap_or("QUEUED"));
-                let position =
-                    u32::try_from(entry_val["position"].as_u64().unwrap_or(0)).unwrap_or(0);
-                Ok(MergeQueueEntry {
-                    id: id.to_string(),
-                    state,
-                    position,
-                })
-            },
-        );
-        results.push((*pr_number, result));
-    }
-
-    Ok(results)
+    let response = graphql_post_allow_partial(&client, token, &body).await?;
+    Ok(parse_batch_enqueue_response(&response, targets))
 }
 
-pub async fn enqueue_pull_request(token: &str, pull_request_id: &str) -> Result<MergeQueueEntry> {
+fn parse_batch_enqueue_response(
+    response: &serde_json::Value,
+    targets: &[(u64, String, String)],
+) -> Vec<(u64, Result<MergeQueueEntry>)> {
+    let errors_by_alias = graphql_errors_by_alias(response.get("errors"));
+    let data = &response["data"];
+
+    targets
+        .iter()
+        .enumerate()
+        .map(|(i, (pr_number, _, _))| {
+            let alias = format!("pr{i}");
+            let entry_val = &data[&alias]["mergeQueueEntry"];
+            let result = entry_val["id"].as_str().filter(|id| !id.is_empty()).map_or_else(
+                || {
+                    let message = errors_by_alias.get(&alias).map_or_else(
+                        || {
+                            format!(
+                                "no mergeQueueEntry returned for PR #{pr_number}, already queued or ineligible"
+                            )
+                        },
+                        |messages| messages.join("; "),
+                    );
+                    Err(anyhow!("{message}"))
+                },
+                |id| {
+                    Ok(MergeQueueEntry {
+                        id: id.to_string(),
+                        state: MergeQueueState::from(
+                            entry_val["state"].as_str().unwrap_or("QUEUED"),
+                        ),
+                        position: u32::try_from(entry_val["position"].as_u64().unwrap_or(0))
+                            .unwrap_or(0),
+                    })
+                },
+            );
+            (*pr_number, result)
+        })
+        .collect()
+}
+
+fn graphql_errors_by_alias(
+    errors: Option<&serde_json::Value>,
+) -> std::collections::HashMap<String, Vec<String>> {
+    let mut errors_by_alias = std::collections::HashMap::new();
+    let Some(errors) = errors.and_then(serde_json::Value::as_array) else {
+        return errors_by_alias;
+    };
+
+    for error in errors {
+        let message = error["message"].as_str().unwrap_or("unknown GraphQL error");
+        let alias = error["path"]
+            .as_array()
+            .and_then(|path| path.first())
+            .and_then(serde_json::Value::as_str);
+        if let Some(alias) = alias {
+            debug!(%alias, %message, "batched enqueue GraphQL alias failed");
+            errors_by_alias
+                .entry(alias.to_string())
+                .or_insert_with(Vec::new)
+                .push(message.to_string());
+        } else {
+            debug!(%error, "batched enqueue GraphQL error has no alias path");
+        }
+    }
+
+    errors_by_alias
+}
+
+pub async fn enqueue_pull_request(
+    token: &str,
+    pull_request_id: &str,
+    expected_head_oid: &str,
+) -> Result<MergeQueueEntry> {
     let mutation = r"
-        mutation EnqueuePR($pullRequestId: ID!) {
-          enqueuePullRequest(input: { pullRequestId: $pullRequestId }) {
+        mutation EnqueuePR($pullRequestId: ID!, $expectedHeadOid: GitObjectID!) {
+          enqueuePullRequest(input: { pullRequestId: $pullRequestId, expectedHeadOid: $expectedHeadOid }) {
             mergeQueueEntry { id state position }
           }
         }
@@ -517,7 +587,10 @@ pub async fn enqueue_pull_request(token: &str, pull_request_id: &str) -> Result<
 
     let body = json!({
         "query": mutation,
-        "variables": { "pullRequestId": pull_request_id }
+        "variables": {
+            "pullRequestId": pull_request_id,
+            "expectedHeadOid": expected_head_oid
+        }
     });
 
     let client = reqwest::Client::new();

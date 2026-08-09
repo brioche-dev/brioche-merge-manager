@@ -270,6 +270,7 @@ pub enum PrStatus {
 pub struct PullRequest {
     pub number: u64,
     pub node_id: String,
+    pub head_oid: String,
     pub title: String,
     pub author: String,
     pub html_url: String,
