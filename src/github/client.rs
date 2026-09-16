@@ -37,15 +37,19 @@ impl GitHubClient {
         Ok(prs)
     }
 
-    pub async fn enqueue_pr(&self, node_id: &str) -> Result<MergeQueueEntry> {
+    pub async fn enqueue_pr(
+        &self,
+        node_id: &str,
+        expected_head_oid: &str,
+    ) -> Result<MergeQueueEntry> {
         debug!(%node_id, "enqueue_pr");
-        enqueue_pull_request(&self.token, node_id).await
+        enqueue_pull_request(&self.token, node_id, expected_head_oid).await
     }
 
     /// Enqueue multiple PRs in one batched GraphQL call.
     pub async fn enqueue_prs(
         &self,
-        targets: &[(u64, String)],
+        targets: &[(u64, String, String)],
     ) -> Vec<(u64, Result<MergeQueueEntry>)> {
         debug!(count = targets.len(), "enqueue_prs");
         match enqueue_pull_requests_batch(&self.token, targets).await {
@@ -54,7 +58,7 @@ impl GitHubClient {
                 let msg = e.to_string();
                 targets
                     .iter()
-                    .map(|(n, _)| (*n, Err(anyhow::anyhow!("{msg}"))))
+                    .map(|(n, _, _)| (*n, Err(anyhow::anyhow!("{msg}"))))
                     .collect()
             }
         }

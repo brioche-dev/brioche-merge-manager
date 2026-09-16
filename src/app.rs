@@ -532,13 +532,13 @@ impl App {
                 }
                 if !self.selected_prs.is_empty() {
                     // Batch path: enqueue all selected PRs not already in the queue.
-                    let targets: Vec<(u64, String)> = self
+                    let targets: Vec<(u64, String, String)> = self
                         .prs
                         .iter()
                         .filter(|pr| {
                             self.selected_prs.contains(&pr.number) && pr.merge_queue.is_none()
                         })
-                        .map(|pr| (pr.number, pr.node_id.clone()))
+                        .map(|pr| (pr.number, pr.node_id.clone(), pr.head_oid.clone()))
                         .collect();
                     self.selected_prs.clear();
                     if !targets.is_empty() {
@@ -560,12 +560,13 @@ impl App {
                     if pr.merge_queue.is_none() {
                         let github = Arc::clone(&self.github);
                         let node_id = pr.node_id.clone();
+                        let head_oid = pr.head_oid.clone();
                         let pr_number = pr.number;
                         let tx = action_tx.clone();
                         self.enqueue_in_flight = true;
                         self.enqueue_total = 1;
                         tokio::spawn(async move {
-                            match github.enqueue_pr(&node_id).await {
+                            match github.enqueue_pr(&node_id, &head_oid).await {
                                 Ok(entry) => {
                                     let _ = tx.send(Action::PrEnqueued(pr_number, entry));
                                 }
